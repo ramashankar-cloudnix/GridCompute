@@ -1,0 +1,17 @@
+{
+  "name": "gridtorrent",
+  "version": "1.0.0",
+  "description": "Distributed P2P Mandelbrot rendering grid with 8x complexity (4x4 SSAA, 1000 max iterations)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}

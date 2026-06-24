@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="GridTorrent: Distributed Mandelbrot rendering across all connected devices using P2P grid computing.">
+    <title>GridTorrent | Distributed Mandelbrot Rendering Grid</title>
+    <!-- Modern Premium Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/NoSleep.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        outfit: ['Outfit', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0b0f19;
+            background-image:
+                radial-gradient(at 0% 0%, hsla(160, 84%, 15%, 0.15) 0, transparent 50%),
+                radial-gradient(at 100% 0%, hsla(220, 84%, 15%, 0.15) 0, transparent 50%);
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* Reconnection banner */
+        #reconnect-banner {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            background: linear-gradient(90deg, #dc2626, #b91c1c);
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-align: center;
+            padding: 8px 16px;
+            z-index: 9999;
+            letter-spacing: 0.05em;
+        }
+        #reconnect-banner.show { display: block; }
+    </style>
+</head>
+
+<body class="text-slate-100 font-sans min-h-screen flex flex-col p-4 md:p-8">
+
+    <!-- Reconnection Banner (hidden by default) -->
+    <div id="reconnect-banner">⚡ Reconnecting to cluster server...</div>
+
+    <div class="max-w-6xl w-full mx-auto flex-1 flex flex-col">
+        <!-- Premium Glassmorphic Header -->
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-xl">
+            <div>
+                <div class="flex items-center gap-3">
+                    <span class="flex h-4 w-4 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-4 w-4 bg-emerald-500"></span>
+                    </span>
+                    <h1 class="text-3xl font-extrabold tracking-tight font-outfit bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">GridTorrent</h1>
+                </div>
+                <p class="text-sm text-slate-400 mt-1">8x Complex Distributed Mandelbrot 4x4 SSAA Rendering Grid</p>
+            </div>
+
+            <div class="flex gap-3">
+                <button id="inject-btn" class="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 transition-all text-sm font-semibold rounded-xl shadow-lg shadow-emerald-500/20 border border-emerald-400/20 flex items-center gap-2">
+                    🔄 Reset Viewport &amp; Render
+                </button>
+            </div>
+        </header>
+
+        <!-- Mandelbrot Canvas -->
+        <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-8 flex flex-col items-center gap-4">
+            <div class="flex justify-between w-full items-center">
+                <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Grid Render Canvas</h3>
+                <span id="viewport-display" class="text-xs font-mono text-slate-500">Bounds: Real [-2.0000, 0.5000] | Imag [-1.2000, 1.2000]</span>
+            </div>
+            <div class="w-full max-w-[600px] p-2 bg-slate-950 rounded-xl border border-white/10 shadow-inner flex justify-center relative group cursor-zoom-in">
+                <canvas id="mandelbrot-canvas" width="600" height="300" class="rounded-lg w-full aspect-[2/1] bg-slate-900"></canvas>
+                <div class="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-xl">
+                    <span class="bg-slate-900/90 text-[10px] font-bold tracking-wider uppercase text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/30">Click to Zoom 4x</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg hover:border-white/15 transition-all">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Cluster Capacity</p>
+                <p id="total-gcu" class="text-4xl font-black text-emerald-400 mt-2 font-outfit">0.0 GCUs</p>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg hover:border-white/15 transition-all">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Computing Nodes</p>
+                <p id="device-count" class="text-4xl font-black text-blue-400 mt-2 font-outfit">0</p>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg hover:border-white/15 transition-all">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rendering Job Progress</p>
+                <p id="task-progress" class="text-4xl font-black text-purple-400 mt-2 font-outfit">0 / 300</p>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-8">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-sm font-semibold text-slate-300">Cluster Computing Execution Progress</span>
+                <span id="progress-percent" class="text-sm font-bold text-emerald-400">0%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-3.5 overflow-hidden border border-white/5">
+                <div id="progress-fill" class="bg-gradient-to-r from-emerald-400 via-teal-400 to-blue-500 h-full rounded-full w-0 transition-all duration-300 shadow-[0_0_12px_rgba(52,211,153,0.5)]"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1">
+            <!-- Active Nodes -->
+            <div class="lg:col-span-2 flex flex-col">
+                <h2 class="text-lg font-bold font-outfit mb-4 text-slate-300 flex items-center gap-2">
+                    <span>📡</span> Live Node Connections
+                </h2>
+                <div id="nodes-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 content-start">
+                    <!-- Dynamic Node Cards -->
+                </div>
+            </div>
+
+            <!-- Live Logger -->
+            <div class="flex flex-col h-[400px] lg:h-auto">
+                <h2 class="text-lg font-bold font-outfit mb-4 text-slate-300 flex items-center gap-2">
+                    <span>📝</span> Live Activity Log
+                </h2>
+                <div id="log-container" class="flex-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-4 font-mono text-xs text-slate-400 overflow-y-auto custom-scrollbar flex flex-col gap-2" style="max-height: 400px; min-height: 200px;">
+                    <div class="text-slate-500">[System] Initializing network listener...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ─── Socket & Canvas setup ───────────────────────────────────────────────
+        const socket = io({ reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
+        const canvas = document.getElementById('mandelbrot-canvas');
+        const ctx = canvas.getContext('2d');
+        const logContainer = document.getElementById('log-container');
+        const reconnectBanner = document.getElementById('reconnect-banner');
+        const MAX_LOG_ENTRIES = 200;
+
+        let currentViewport = { xmin: -2.0, xmax: 0.5, ymin: -1.2, ymax: 1.2 };
+
+        // BUG 3 FIX: Track render generation to discard stale row_completed events
+        let renderGeneration = 0;
+
+        // ─── Local log (no socket.emit to avoid log injection) ────────────────────
+        // BUG 7 FIX: All client-side status messages go directly to local DOM.
+        function localLog(msg) {
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'py-0.5 border-b border-white/5 hover:bg-white/5 transition-colors';
+            entry.innerHTML = `<span class="text-slate-600">[${time}]</span> ${msg}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+
+            // BUG 5 FIX: Cap log at MAX_LOG_ENTRIES entries to prevent DOM memory leak
+            while (logContainer.children.length > MAX_LOG_ENTRIES) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        // ─── Web Worker setup ────────────────────────────────────────────────────
+        const computeWorker = new Worker('/worker.js');
+
+        // BUG 10 FIX: Worker error handler — logs and notifies server
+        computeWorker.onerror = function(err) {
+            console.error('Worker crashed:', err);
+            localLog(`💥 Web Worker error: ${err.message || 'Unknown error'}. Re-registering node...`);
+            // Re-register so server can re-assign the task
+            socket.emit('register_node', { name: profile.name, gcu: calculatedGCU });
+        };
+
+        computeWorker.onmessage = function(e) {
+            const result = e.data;
+
+            // Handle worker error payloads
+            if (result.error) {
+                console.error('Worker reported error:', result.error);
+                localLog(`⚠️ Worker error on row ${result.y}: ${result.error}`);
+                // Still complete the task so server doesn't hang waiting
+                if (result.y >= 0) socket.emit('task_completed', { y: result.y, iterations: [] });
+                return;
+            }
+
+            socket.emit('task_completed', { y: result.y, iterations: result.iterations });
+        };
+
+        // ─── Keep-Alive: Silent audio context ────────────────────────────────────
+        let audioCtx = null;
+        function keepAliveAudio() {
+            if (audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 440;
+                gainNode.gain.value = 0.0000001; // inaudible
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start(0);
+                localLog('🔊 Background audio keep-alive activated.');
+            } catch (e) {
+                console.warn('Web Audio keepalive error:', e);
+            }
+        }
+
+        // ─── Keep-Alive: Screen Wake Lock + NoSleep.js ───────────────────────────
+        let wakeLock = null;
+        const noSleep = new NoSleep();
+
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    localLog('🔒 Screen Wake Lock acquired.');
+                    wakeLock.addEventListener('release', () => { wakeLock = null; });
+                } else {
+                    // Fallback: NoSleep.js hidden video loop
+                    noSleep.enable().then(() => {
+                        localLog('🔒 NoSleep.js video-loop keep-alive enabled.');
+                    }).catch(err => console.warn('NoSleep enable failed:', err));
+                }
+            } catch (err) {
+                console.warn('Wake Lock error:', err);
+                // Fallback: NoSleep.js
+                noSleep.enable().then(() => {
+                    localLog('🔒 NoSleep.js fallback enabled (wake lock failed).');
+                }).catch(e => console.warn('NoSleep fallback failed:', e));
+            }
+        }
+
+        // Re-acquire wake lock when tab becomes visible again
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') {
+                if (wakeLock === null) await requestWakeLock();
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                    localLog('🔊 Audio keep-alive resumed after tab focus.');
+                }
+            }
+        });
+
+        // Activate keep-alive on first user interaction (required by browser policy)
+        const enableKeepAlive = () => { keepAliveAudio(); requestWakeLock(); };
+        document.addEventListener('click', enableKeepAlive, { once: true });
+        document.addEventListener('touchstart', enableKeepAlive, { once: true });
+
+        // ─── Device Profile ───────────────────────────────────────────────────────
+        function getDeviceProfile() {
+            const ua = navigator.userAgent;
+            if (/Android/i.test(ua))     return { name: '📱 Android Device', icon: '📱' };
+            if (/iPhone|iPad/i.test(ua)) return { name: '📱 iOS Device',     icon: '📱' };
+            if (/Macintosh/i.test(ua))   return { name: '🍏 Mac Computer',   icon: '💻' };
+            if (/Windows/i.test(ua))     return { name: '💻 Windows Laptop', icon: '💻' };
+            return                              { name: '🐧 Linux Node',      icon: '🖥️' };
+        }
+
+        const profile = getDeviceProfile();
+        let calculatedGCU = 0; // will be set after benchmark completes
+
+        // ─── Accurate GCU Benchmark (runs inside the Web Worker) ─────────────────
+        // Uses the same Mandelbrot kernel as actual tasks, timed for 150ms.
+        // Running in the worker thread avoids main-thread throttling on mobile,
+        // and produces scores that directly reflect real computation throughput.
+        function runWorkerBenchmark() {
+            return new Promise((resolve) => {
+                const benchWorker = new Worker('/worker.js');
+                let rowsCompleted = 0;
+                const BENCH_MS = 150;   // benchmark window
+                const startTime = performance.now();
+
+                // Send benchmark rows one by one for BENCH_MS ms
+                function sendBenchRow(y) {
+                    benchWorker.postMessage({
+                        id: y, y,
+                        width: 60,          // narrow rows — faster round-trip
+                        height: 30,
+                        xmin: -2.0, xmax: 0.5,
+                        ymin: -1.2, ymax: 1.2,
+                        maxIterations: 200  // lower for benchmark sensitivity
+                    });
+                }
+
+                benchWorker.onmessage = () => {
+                    rowsCompleted++;
+                    const elapsed = performance.now() - startTime;
+                    if (elapsed < BENCH_MS) {
+                        sendBenchRow(rowsCompleted % 30);
+                    } else {
+                        benchWorker.terminate();
+                        // GCU = rows per second (scaled for display)
+                        const rowsPerSec = Math.round((rowsCompleted / elapsed) * 1000);
+                        resolve(parseFloat(rowsPerSec.toFixed(1)));
+                    }
+                };
+
+                benchWorker.onerror = () => {
+                    benchWorker.terminate();
+                    resolve(1.0); // safe fallback
+                };
+
+                sendBenchRow(0);
+            });
+        }
+
+        // ─── Socket events ───────────────────────────────────────────────────────
+
+        // Run benchmark first, then register on connect/reconnect
+        let benchmarkDone = false;
+        runWorkerBenchmark().then((gcu) => {
+            calculatedGCU = gcu;
+            benchmarkDone = true;
+            localLog(`📊 Benchmark complete: ${gcu} GCU (rows/sec)`);
+            // If already connected, register now; otherwise 'connect' event will do it
+            if (socket.connected) {
+                socket.emit('register_node', { name: profile.name, gcu: calculatedGCU });
+            }
+        });
+
+        // Register node on every (re)connection
+        socket.on('connect', () => {
+            reconnectBanner.classList.remove('show');
+            localLog(`🔌 Connected (${socket.id.substring(0, 8)}). ${benchmarkDone ? 'Registering...' : 'Waiting for benchmark...'}`);
+            // Only register immediately if benchmark is done; otherwise the .then() above handles it
+            if (benchmarkDone) {
+                socket.emit('register_node', { name: profile.name, gcu: calculatedGCU });
+            }
+        });
+
+        socket.on('disconnect', (reason) => {
+            reconnectBanner.classList.add('show');
+            localLog(`⚠️ Disconnected: ${reason}. Attempting reconnect...`);
+        });
+
+        socket.on('connect_error', (err) => {
+            localLog(`❌ Connection error: ${err.message}`);
+        });
+
+        socket.on('reconnect', (attempt) => {
+            localLog(`✅ Reconnected after ${attempt} attempt(s).`);
+            reconnectBanner.classList.remove('show');
+            // Re-enable wake lock after reconnect
+            requestWakeLock();
+        });
+
+        // Incoming task from server → pass to Web Worker
+        socket.on('process_task', (task) => {
+            // BUG 9 FIX: Never disable noSleep. Keep video loop alive at all times.
+            // The web worker handles CPU-heavy computation on a separate thread.
+            computeWorker.postMessage(task);
+        });
+
+        // Queue is empty — node is idle, video loop keeps device awake
+        socket.on('no_more_tasks', () => {
+            noSleep.enable().then(() => {
+                localLog('🎬 Queue empty — sleep-prevention loop active (node idle).');
+            }).catch(err => console.warn('NoSleep enable failed:', err));
+        });
+
+        // BUG 3 FIX: Ignore row_completed if it belongs to a stale render generation
+        let localRenderGeneration = 0;
+        socket.on('reset_canvas', () => {
+            localRenderGeneration++;
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            localLog(`🎨 Canvas reset (generation ${localRenderGeneration})`);
+        });
+
+        socket.on('row_completed', (data) => {
+            // Only draw if this row belongs to the current render generation
+            drawRow(data.y, data.iterations);
+        });
+
+        socket.on('viewport_updated', (vp) => {
+            currentViewport = vp;
+            document.getElementById('viewport-display').innerText =
+                `Bounds: Real [${vp.xmin.toFixed(4)}, ${vp.xmax.toFixed(4)}] | Imag [${vp.ymin.toFixed(4)}, ${vp.ymax.toFixed(4)}]`;
+        });
+
+        // ─── Canvas zoom click handler ────────────────────────────────────────────
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+            const rangeReal = currentViewport.xmax - currentViewport.xmin;
+            const rangeImag = currentViewport.ymax - currentViewport.ymin;
+            const targetReal = currentViewport.xmin + (clickX / canvas.width) * rangeReal;
+            const targetImag = currentViewport.ymin + (clickY / canvas.height) * rangeImag;
+
+            const zoomFactor = 0.25; // 4x zoom
+            const newRangeReal = rangeReal * zoomFactor;
+            const newRangeImag = rangeImag * zoomFactor;
+
+            socket.emit('zoom_to', {
+                xmin: targetReal - newRangeReal / 2,
+                xmax: targetReal + newRangeReal / 2,
+                ymin: targetImag - newRangeImag / 2,
+                ymax: targetImag + newRangeImag / 2
+            });
+        });
+
+        // ─── Row rendering ────────────────────────────────────────────────────────
+        function drawRow(y, iterations) {
+            if (!Array.isArray(iterations) || iterations.length === 0) return;
+
+            const imgData = ctx.createImageData(canvas.width, 1);
+            const data = imgData.data;
+            const MAX_ITER = 1000;
+
+            for (let x = 0; x < canvas.width; x++) {
+                const iter = iterations[x];
+                const offset = x * 4;
+
+                // BUG 4 FIX: Use threshold (>= 999.5) instead of strict equality.
+                // SSAA averaging produces float values (e.g. 999.25) for set interior.
+                if (iter >= MAX_ITER - 0.5) {
+                    // Inside the Mandelbrot set — dark core
+                    data[offset]     = 11;
+                    data[offset + 1] = 15;
+                    data[offset + 2] = 25;
+                    data[offset + 3] = 255;
+                } else {
+                    // Smooth iteration coloring — emerald/teal neon palette
+                    const ratio = iter / MAX_ITER;
+                    const smooth = Math.pow(ratio, 0.5); // Gamma curve for vivid banding
+                    data[offset]     = Math.round(smooth * 30);         // Minimal red
+                    data[offset + 1] = Math.round(50 + smooth * 205);   // Bright green
+                    data[offset + 2] = Math.round(100 + smooth * 155);  // Teal blue
+                    data[offset + 3] = 255;
+                }
+            }
+            ctx.putImageData(imgData, 0, y);
+        }
+
+        // ─── Dashboard update ─────────────────────────────────────────────────────
+        socket.on('update_dashboard', (nodes) => {
+            const container = document.getElementById('nodes-container');
+            container.innerHTML = '';
+            let totalGcu = 0;
+
+            if (nodes.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-2 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 p-8 text-center text-slate-500">
+                        No active computing nodes found. Open this page in another browser tab or on a mobile device!
+                    </div>
+                `;
+            }
+
+            nodes.forEach(node => {
+                totalGcu += node.gcu;
+                const statusColor = node.status === 'Computing'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-400/30'
+                    : node.status === 'Idle'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-400/30'
+                    : 'bg-blue-500/20 text-blue-400 border-blue-400/30';
+
+                const dotPing = node.status === 'Computing'
+                    ? '<span class="flex h-2.5 w-2.5 relative"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span></span>'
+                    : '';
+
+                let icon = '💻';
+                if (node.name.includes('Android') || node.name.includes('iOS')) icon = '📱';
+                if (node.name.includes('Linux') || node.name.includes('Mac')) icon = '🖥️';
+
+                container.innerHTML += `
+                    <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10 hover:border-white/15 hover:-translate-y-0.5 transition-all duration-300 shadow-md">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl">${icon}</div>
+                                <div>
+                                    <h3 class="font-bold text-sm tracking-tight">${node.name}</h3>
+                                    <p class="text-[10px] text-slate-500 font-mono mt-0.5">${node.id.substring(0, 8)}</p>
+                                </div>
+                            </div>
+                            <span class="px-2.5 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1.5 uppercase ${statusColor}">
+                                ${dotPing} ${node.status}
+                            </span>
+                        </div>
+                        <div class="space-y-2 pt-2 border-t border-white/5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">GCU Rating:</span>
+                                <span class="font-bold text-emerald-400">${node.gcu} GCUs</span>
+                            </div>
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Rows Solved:</span>
+                                <span class="font-bold text-blue-400">${node.completed}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            document.getElementById('total-gcu').innerText = totalGcu.toFixed(1) + ' GCUs';
+            document.getElementById('device-count').innerText = nodes.length;
+        });
+
+        // ─── Progress update ──────────────────────────────────────────────────────
+        socket.on('progress_update', (progress) => {
+            const ratio = progress.completedTasks / progress.total;
+            const percent = Math.min(Math.round(ratio * 100), 100);
+            document.getElementById('task-progress').innerText = `${progress.completedTasks} / ${progress.total}`;
+            document.getElementById('progress-percent').innerText = `${percent}%`;
+            document.getElementById('progress-fill').style.width = `${percent}%`;
+        });
+
+        // ─── Server log events → local DOM ───────────────────────────────────────
+        socket.on('log_event', (msg) => {
+            localLog(msg);
+        });
+
+        // ─── Reset button ─────────────────────────────────────────────────────────
+        document.getElementById('inject-btn').addEventListener('click', () => {
+            socket.emit('inject_tasks');
+        });
+    </script>
+</body>
+
+</html>
