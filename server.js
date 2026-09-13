@@ -6,7 +6,18 @@ const fs   = require('fs');
 const multer = require('multer');
 
 const app = express();
-app.use(express.json()); // Support JSON body parsing for API submissions
+// Support large JSON payloads (e.g. GEMM matrices and tensor arrays up to 100MB)
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+// Ensure Express never returns HTML error pages for API requests
+app.use((err, req, res, next) => {
+    if (err) {
+        console.error('⚠️ Express parsing error:', err.message);
+        return res.status(err.status || 400).json({ error: err.message || 'Invalid request body' });
+    }
+    next();
+});
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: '*' },
@@ -77,16 +88,19 @@ function generateTasks() {
     return tasks;
 }
 
-let heavyTaskQueue  = generateTasks();
-let totalTasksCount = heavyTaskQueue.length;
+let heavyTaskQueue  = [];
+let totalTasksCount = 0;
 let completedTasks  = 0;
 
 // ─── Static file serving ──────────────────────────────────────────────────────
 app.get('/',             (req, res) => res.sendFile(__dirname + '/index.html'));
 app.get('/worker.js',    (req, res) => res.sendFile(__dirname + '/worker.js'));
 app.get('/worker_gpu.js',(req, res) => res.sendFile(__dirname + '/worker_gpu.js'));
+app.get('/worker_webgpu.js', (req, res) => res.sendFile(__dirname + '/worker_webgpu.js'));
 app.get('/NoSleep.min.js',(req,res) => res.sendFile(__dirname + '/NoSleep.min.js'));
 app.get('/worker_litert.js', (req, res) => res.sendFile(__dirname + '/worker_litert.js'));
+app.get('/demo',         (req, res) => res.sendFile(__dirname + '/demo_app.html'));
+app.get('/demo_app.html',(req, res) => res.sendFile(__dirname + '/demo_app.html'));
 
 // ─── LiteRT.js — serve wasm runtime assets to browser nodes ──────────────────
 // Browser workers call loadLiteRt('/litert-wasm/') which fetches these binaries.
@@ -107,25 +121,52 @@ if (fs.existsSync(LITERT_JS_DIR)) {
 app.use('/models', express.static(MODELS_DIR));
 
 // ─── Distributed Compute API & Jobs State ─────────────────────────────────────
-const jobs = {
-    mandelbulb: {
-        id: 'mandelbulb',
-        type: 'mandelbulb',
-        status: 'processing',
-        tasks: [],
-        results: {},
-        completedCount: 0,
-        totalCount: 90,
-        createdAt: Date.now()
-    }
-};
+const jobs = {};
 
-// API: Check status of a job
+// ─── Unified Distributed Task Push & Grid Telemetry API (v1) ─────────────────
+
+// API: Get online cluster nodes with hardware & GFLOPS telemetry
+app.get('/api/v1/grid/nodes', (_req, res) => {
+    res.json({
+        nodes: Object.values(networkNodes),
+        totalCount: Object.keys(networkNodes).length
+    });
+});
+
+// API: Get cluster-wide stats and aggregate GFLOPS (FP32, FP16, INT8)
+app.get('/api/v1/grid/stats', (_req, res) => {
+    const nodes = Object.values(networkNodes);
+    let totalFP32 = 0, totalFP16 = 0, totalINT8 = 0, totalGflops = 0, totalWorkers = 0;
+
+    nodes.forEach(n => {
+        totalWorkers += (n.concurrency || 1);
+        if (n.benchmarks) {
+            totalFP32 += (n.benchmarks.fp32_gflops || 0);
+            totalFP16 += (n.benchmarks.fp16_gflops || 0);
+            totalINT8 += (n.benchmarks.int8_gops || 0);
+            totalGflops += (n.benchmarks.total_gflops || 0);
+        } else {
+            totalGflops += (n.gcu || 0);
+        }
+    });
+
+    res.json({
+        onlineNodes: nodes.length,
+        totalWorkers,
+        totalFP32Gflops: parseFloat(totalFP32.toFixed(2)),
+        totalFP16Gflops: parseFloat(totalFP16.toFixed(2)),
+        totalINT8Gops: parseFloat(totalINT8.toFixed(2)),
+        totalGflops: parseFloat(totalGflops.toFixed(2)),
+        queuedTasks: heavyTaskQueue.length,
+        completedTasks,
+        activeJobs: Object.keys(jobs).length
+    });
+});
+
+// API: Check status of any job
 app.get('/api/job-status/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
-    if (!job) {
-        return res.status(404).json({ error: 'Job not found' });
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
     res.json({
         jobId: job.id,
         type: job.type,
@@ -133,11 +174,201 @@ app.get('/api/job-status/:jobId', (req, res) => {
         progress: {
             completed: job.completedCount,
             total: job.totalCount,
-            percent: Math.round((job.completedCount / job.totalCount) * 100)
+            percent: job.totalCount > 0 ? Math.round((job.completedCount / job.totalCount) * 100) : 100
         },
         results: job.results,
+        assembledResult: job.assembledResult || null,
         createdAt: new Date(job.createdAt).toISOString(),
         completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null
+    });
+});
+app.get('/api/v1/jobs/:jobId', (req, res) => {
+    const job = jobs[req.params.jobId];
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({
+        jobId: job.id,
+        type: job.type,
+        status: job.status,
+        progress: {
+            completed: job.completedCount,
+            total: job.totalCount,
+            percent: job.totalCount > 0 ? Math.round((job.completedCount / job.totalCount) * 100) : 100
+        },
+        resultsCount: Object.keys(job.results).length,
+        createdAt: new Date(job.createdAt).toISOString(),
+        completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : null
+    });
+});
+
+// API: Get assembled results of a completed job
+app.get('/api/v1/jobs/:jobId/results', (req, res) => {
+    const job = jobs[req.params.jobId];
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({
+        jobId: job.id,
+        status: job.status,
+        type: job.type,
+        completedCount: job.completedCount,
+        totalCount: job.totalCount,
+        assembledResult: job.assembledResult || null,
+        rawResults: job.results
+    });
+});
+
+// API: Cancel / delete a job
+app.delete('/api/v1/jobs/:jobId', (req, res) => {
+    const jobId = req.params.jobId;
+    if (!jobs[jobId]) return res.status(404).json({ error: 'Job not found' });
+    
+    // Purge queued tasks belonging to this job
+    const beforeCount = heavyTaskQueue.length;
+    heavyTaskQueue = heavyTaskQueue.filter(t => t.jobId !== jobId);
+    const removed = beforeCount - heavyTaskQueue.length;
+    jobs[jobId].status = 'cancelled';
+    io.emit('log_event', `🛑 Job ${jobId} cancelled (${removed} queued chunks purged).`);
+    res.json({ cancelled: jobId, purgedTasks: removed });
+});
+
+// API: Unified Task Push (v1) — Supports GEMM, Monte Carlo, Custom JS, and Array compute
+app.post('/api/v1/jobs', (req, res) => {
+    const { type, matrixA, matrixB, M, K, N, tileRows, totalSamples, chunkSize, script, imports, tasks, redundancy, requiredBackend } = req.body;
+    const jobRedundancy = Math.max(1, Math.min(parseInt(redundancy, 10) || 1, 5));
+    const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
+
+    let queuedTasks = [];
+    let jobAssembledResult = null;
+    let jobParams = {};
+
+    // 1. GEMM Matrix Multiplication Workload
+    if (type === 'gemm') {
+        const rowsM = parseInt(M, 10);
+        const colsK = parseInt(K, 10);
+        const colsN = parseInt(N, 10);
+        if (!Array.isArray(matrixA) || !Array.isArray(matrixB) || !rowsM || !colsK || !colsN) {
+            return res.status(400).json({ error: 'Invalid GEMM request: matrixA, matrixB, M, K, N required' });
+        }
+        const tRows = Math.max(1, parseInt(tileRows, 10) || 32);
+        jobParams = { M: rowsM, K: colsK, N: colsN, tileRows: tRows };
+        jobAssembledResult = {
+            M: rowsM,
+            K: colsK,
+            N: colsN,
+            matrixC: new Array(rowsM * colsN).fill(0),
+            achievedGflops: 0,
+            durationSeconds: 0
+        };
+
+        for (let r = 0; r < rowsM; r += tRows) {
+            const rowCount = Math.min(tRows, rowsM - r);
+            const subA = matrixA.slice(r * colsK, (r + rowCount) * colsK);
+            for (let rep = 0; rep < jobRedundancy; rep++) {
+                queuedTasks.push({
+                    jobId,
+                    taskId: `gemm_tile_${r}`,
+                    type: 'gemm',
+                    requiredBackend: requiredBackend || null,
+                    params: {
+                        tileRowStart: r,
+                        tileRowCount: rowCount,
+                        K: colsK,
+                        N: colsN,
+                        subA,
+                        matrixB
+                    },
+                    replicaIndex: rep
+                });
+            }
+        }
+    }
+    // 2. Monte Carlo Simulation Workload (e.g. Distributed Pi Estimation)
+    else if (type === 'monte_carlo') {
+        const samples = parseInt(totalSamples, 10) || 5000000;
+        const cSize = Math.max(10000, parseInt(chunkSize, 10) || 500000);
+        const numChunks = Math.ceil(samples / cSize);
+        jobParams = { totalSamples: samples, chunkSize: cSize };
+        jobAssembledResult = { totalSamples: samples, totalHits: 0, estimatedPi: 0 };
+
+        const mcScript = `
+            const count = params.samples;
+            let hits = 0;
+            for (let i = 0; i < count; i++) {
+                const x = Math.random();
+                const y = Math.random();
+                if (x * x + y * y <= 1.0) hits++;
+            }
+            return { hits, samples: count, localPi: (4 * hits) / count };
+        `;
+
+        for (let i = 0; i < numChunks; i++) {
+            const thisChunk = Math.min(cSize, samples - i * cSize);
+            for (let rep = 0; rep < jobRedundancy; rep++) {
+                queuedTasks.push({
+                    jobId,
+                    taskId: `mc_chunk_${i}`,
+                    type: 'custom',
+                    script: mcScript,
+                    params: { chunkIndex: i, samples: thisChunk },
+                    replicaIndex: rep
+                });
+            }
+        }
+    }
+    // 3. Generic Custom Tasks or raw tasks array
+    else {
+        if (!tasks || !Array.isArray(tasks)) {
+            return res.status(400).json({ error: 'Tasks array or valid compute type required' });
+        }
+        const jobImports = Array.isArray(imports) ? imports : [];
+        tasks.forEach(t => {
+            for (let rep = 0; rep < jobRedundancy; rep++) {
+                queuedTasks.push({
+                    jobId,
+                    taskId: t.taskId,
+                    type: type || 'custom',
+                    script: t.script || script || '',
+                    imports: t.imports || jobImports,
+                    params: t.params,
+                    requiredBackend: t.requiredBackend || requiredBackend || null,
+                    replicaIndex: rep
+                });
+            }
+        });
+    }
+
+    if (queuedTasks.length === 0) {
+        return res.status(400).json({ error: 'No tasks generated' });
+    }
+
+    const logicalCount = queuedTasks.length / jobRedundancy;
+    const newJob = {
+        id: jobId,
+        type: type || 'custom',
+        status: 'queued',
+        params: jobParams,
+        redundancy: jobRedundancy,
+        tasks: queuedTasks,
+        results: {},
+        assembledResult: jobAssembledResult,
+        completedCount: 0,
+        totalCount: logicalCount,
+        createdAt: Date.now()
+    };
+
+    jobs[jobId] = newJob;
+    heavyTaskQueue.push(...queuedTasks);
+    totalTasksCount += queuedTasks.length;
+
+    io.emit('log_event', `📥 [API] Job ${jobId} (${newJob.type}) queued: ${logicalCount} tasks | Redundancy N=${jobRedundancy}`);
+    io.emit('progress_update', { completedTasks, total: totalTasksCount });
+    wakeAllNodes();
+
+    res.status(202).json({
+        jobId,
+        type: newJob.type,
+        status: 'queued',
+        totalTasks: logicalCount,
+        queuedTasks: queuedTasks.length,
+        redundancy: jobRedundancy
     });
 });
 
@@ -188,13 +419,14 @@ app.delete('/api/models/:name', (req, res) => {
 
 // API: Submit a custom generic JavaScript task job
 app.post('/api/submit-job', (req, res) => {
-    const { type, script, tasks, redundancy } = req.body;
+    const { type, script, imports, tasks, redundancy } = req.body;
     if (!tasks || !Array.isArray(tasks)) {
         return res.status(400).json({ error: 'Invalid tasks array' });
     }
 
     const jobRedundancy = Math.max(1, Math.min(parseInt(redundancy, 10) || 1, 5)); // cap at 5
     const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
+    const jobImports = Array.isArray(imports) ? imports : [];
     
     const queuedTasks = [];
     tasks.forEach(t => {
@@ -204,6 +436,7 @@ app.post('/api/submit-job', (req, res) => {
                 taskId: t.taskId,
                 type: type || 'custom',
                 script: script || '',
+                imports: t.imports || jobImports,
                 params: t.params,
                 replicaIndex: r
             });
@@ -215,6 +448,7 @@ app.post('/api/submit-job', (req, res) => {
         type: type || 'custom',
         status: 'queued',
         script: script || '',
+        imports: jobImports,
         redundancy: jobRedundancy,
         tasks: queuedTasks,
         results: {},
@@ -233,6 +467,8 @@ app.post('/api/submit-job', (req, res) => {
 
     res.status(202).json({ jobId, status: 'queued', totalTasks: tasks.length, redundancy: jobRedundancy });
 });
+
+
 
 // ─── LiteRT Inference Job API ──────────────────────────────────────────────────
 
@@ -421,14 +657,21 @@ function sendNextTask(socket) {
     if (!networkNodes[socket.id]) return;
     const node = networkNodes[socket.id];
 
+    // Double-buffered prefetch: keep concurrency * 2 tasks in flight so workers never starve
+    const targetBuffer = Math.max(2, (node.concurrency || 2) * 2);
+
     let taskIndex = 0;
-    while (heavyTaskQueue.length > taskIndex && node.activeTasks.length < node.concurrency) {
+    while (heavyTaskQueue.length > taskIndex && node.activeTasks.length < targetBuffer) {
         const task = heavyTaskQueue[taskIndex];
 
         // ── LiteRT routing guard ──────────────────────────────────────────────
-        // LiteRT inference tasks can only run on nodes that loaded worker_litert.js
-        // and confirmed LiteRT.js support via register_node { litert: true }.
         if (task.requiresLiteRt && !node.litert) {
+            taskIndex++;
+            continue;
+        }
+
+        // ── Specific backend requirement guard ────────────────────────────────
+        if (task.requiredBackend && Array.isArray(node.backends) && !node.backends.includes(task.requiredBackend)) {
             taskIndex++;
             continue;
         }
@@ -518,25 +761,36 @@ io.on('connection', (socket) => {
 
         const isNew = !networkNodes[socket.id];
         networkNodes[socket.id] = {
-            id:          socket.id,
-            name:        profile.name.substring(0, 32),
-            cpu:         profile.cpu ? profile.cpu.substring(0, 64)   : 'Unknown CPU',
-            gpu:         profile.gpu ? profile.gpu.substring(0, 256)  : 'Unknown GPU',
-            gcu:         Math.max(0, Math.min(profile.gcu, 99999)),
-            concurrency: typeof profile.concurrency === 'number'
-                             ? Math.max(1, Math.min(profile.concurrency, 32))
-                             : 1,
-            // LiteRT.js capability — true when node is running worker_litert.js
-            // and has successfully initialised the LiteRT Wasm runtime.
-            litert:      profile.litert === true,
-            status:      'Ready',
-            completed:   isNew ? 0 : (networkNodes[socket.id]?.completed || 0),
-            activeTasks: [],
-            connectedAt: Date.now()
+            id:             socket.id,
+            name:           profile.name.substring(0, 32),
+            cpu:            profile.cpu ? profile.cpu.substring(0, 64)   : 'Unknown CPU',
+            gpu:            profile.gpu ? profile.gpu.substring(0, 256)  : 'Unknown GPU',
+            dgpu:           profile.dgpu ? profile.dgpu.substring(0, 128) : null,
+            igpu:           profile.igpu ? profile.igpu.substring(0, 128) : null,
+            gcu:            Math.max(0, Math.min(profile.gcu, 99999)),
+            benchmarks:     profile.benchmarks || {
+                fp32_gflops: 0,
+                fp16_gflops: 0,
+                fp16_supported: false,
+                int8_gops: 0,
+                cpu_gflops: 0,
+                total_gflops: 0
+            },
+            resourceTarget: typeof profile.resourceTarget === 'number' ? profile.resourceTarget : 90,
+            backends:       Array.isArray(profile.backends) ? profile.backends : [],
+            concurrency:    typeof profile.concurrency === 'number'
+                                ? Math.max(1, Math.min(profile.concurrency, 64))
+                                : 1,
+            litert:         profile.litert === true,
+            status:         'Ready',
+            completed:      isNew ? 0 : (networkNodes[socket.id]?.completed || 0),
+            activeTasks:    [],
+            connectedAt:    Date.now()
         };
 
-        console.log(`✅ Registered: ${profile.name} (${profile.gcu} GCUs) [new=${isNew}]`);
-        io.emit('log_event', `✅ Node joined: ${profile.name} — ${profile.gcu} GCUs`);
+        const totalGflops = profile.benchmarks ? profile.benchmarks.total_gflops : profile.gcu;
+        console.log(`✅ Registered: ${profile.name} (${totalGflops} GFLOPS/GCUs) [new=${isNew}]`);
+        io.emit('log_event', `✅ Node joined: ${profile.name} — ${totalGflops} GFLOPS (Target: ${networkNodes[socket.id].resourceTarget}%)`);
         broadcastDashboard();
 
         sendNextTask(socket);
@@ -582,10 +836,26 @@ io.on('connection', (socket) => {
             // Save this node's submission
             job.results[payload.taskId].submissions[socket.id] = {
                 nodeName: node.name,
+                backend: payload.backend || 'unknown',
                 success: !payload.error,
                 error: payload.error,
                 value: payload.result
             };
+
+            // ── Workload-specific assembly ────────────────────────────────────
+            if (job.type === 'gemm' && payload.result && payload.result.tileResult && job.assembledResult) {
+                const { tileRowStart, tileRowCount, tileResult } = payload.result;
+                const N = job.params.N;
+                for (let r = 0; r < tileRowCount; r++) {
+                    const rowOffset = (tileRowStart + r) * N;
+                    const tileOffset = r * N;
+                    for (let c = 0; c < N; c++) {
+                        job.assembledResult.matrixC[rowOffset + c] = tileResult[tileOffset + c];
+                    }
+                }
+            } else if (job.type === 'monte_carlo' && payload.result && job.assembledResult) {
+                job.assembledResult.totalHits += (payload.result.hits || 0);
+            }
 
             const submissionsCount = Object.keys(job.results[payload.taskId].submissions).length;
 
@@ -599,6 +869,20 @@ io.on('connection', (socket) => {
                     yStart: task.yStart,
                     chunkHeight: task.chunkHeight,
                     pixels: payload.pixels || []
+                });
+            } else if (job.type === 'gemm') {
+                // GEMM tile tasks resolve immediately
+                job.completedCount++;
+                job.results[payload.taskId].status = payload.error ? 'failed' : 'success';
+                job.results[payload.taskId].value = payload.result;
+
+                io.emit('gemm_tile_completed', {
+                    jobId: job.id,
+                    taskId: task.taskId,
+                    completedCount: job.completedCount,
+                    totalCount: job.totalCount,
+                    nodeName: node.name,
+                    backend: payload.backend
                 });
             } else {
                 // For custom tasks, check if we have reached the redundancy target
@@ -615,7 +899,7 @@ io.on('connection', (socket) => {
                         votes[key].count++;
                     });
                     
-                    // Find the candidate with the majority votes
+                    // Find candidate with majority votes
                     let winner = null;
                     let maxVotes = 0;
                     for (const key in votes) {
@@ -627,7 +911,6 @@ io.on('connection', (socket) => {
                     
                     const threshold = Math.ceil(job.redundancy / 2);
                     if (maxVotes >= threshold) {
-                        // Consensus reached!
                         job.completedCount++;
                         job.results[payload.taskId].status = winner.success ? 'success' : 'failed';
                         job.results[payload.taskId].value = winner.value;
@@ -646,15 +929,12 @@ io.on('connection', (socket) => {
                             error: winner.error
                         });
                     } else {
-                        // Consensus failed! No majority vote. Re-queue task replicas!
                         console.warn(`⚠️ Consensus failed for Task ${payload.taskId} (Job ${job.id})! Re-queuing...`);
                         io.emit('log_event', `⚠️ Consensus FAILED: Task ${payload.taskId} got conflicting results. Re-queuing...`);
                         
-                        // Clear the submissions for this task
                         job.results[payload.taskId].submissions = {};
                         job.results[payload.taskId].status = 'pending';
                         
-                        // Re-queue task replicas
                         for (let r = 0; r < job.redundancy; r++) {
                             heavyTaskQueue.unshift({
                                 jobId: job.id,
@@ -674,8 +954,29 @@ io.on('connection', (socket) => {
                 job.status = 'completed';
                 job.completedAt = Date.now();
                 const duration = ((job.completedAt - job.createdAt) / 1000).toFixed(2);
-                io.emit('log_event', `🎉 Job ${job.id} (${job.type}) completed in ${duration}s!`);
-                console.log(`🎉 Job ${job.id} completed in ${duration}s`);
+                let extraStats = '';
+
+                if (job.type === 'gemm' && job.params) {
+                    const { M, K, N } = job.params;
+                    const totalOps = 2 * M * K * N;
+                    const durationSec = Math.max(0.01, (job.completedAt - job.createdAt) / 1000);
+                    const gflops = ((totalOps / durationSec) / 1e9).toFixed(2);
+                    job.assembledResult.achievedGflops = parseFloat(gflops);
+                    job.assembledResult.durationSeconds = parseFloat(duration);
+                    extraStats = ` | Rate: ${gflops} GFLOPS`;
+                } else if (job.type === 'monte_carlo' && job.assembledResult) {
+                    job.assembledResult.estimatedPi = (4 * job.assembledResult.totalHits) / job.assembledResult.totalSamples;
+                    extraStats = ` | π ≈ ${job.assembledResult.estimatedPi.toFixed(6)}`;
+                }
+
+                io.emit('job_completed', {
+                    jobId: job.id,
+                    type: job.type,
+                    duration,
+                    assembledResult: job.assembledResult
+                });
+                io.emit('log_event', `🎉 Job ${job.id} (${job.type}) completed in ${duration}s!${extraStats}`);
+                console.log(`🎉 Job ${job.id} completed in ${duration}s${extraStats}`);
             }
         }
 
@@ -751,10 +1052,13 @@ io.on('connection', (socket) => {
     });
 });
 
+const PORT = process.env.PORT || 8080;
+const HOST = process.env.HOST || '0.0.0.0';
+
 // ─── Error handling & graceful shutdown ───────────────────────────────────────
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`\n🚫 Port 8080 is already in use.\n`);
+        console.error(`\n🚫 Port ${PORT} is already in use.\n`);
         process.exit(1);
     } else {
         console.error('Server error:', err);
@@ -762,7 +1066,7 @@ server.on('error', (err) => {
 });
 
 function gracefulShutdown(signal) {
-    console.log(`\n🛑 Received ${signal}. Shutting down GridTorrent server...`);
+    console.log(`\n🛑 Received ${signal}. Shutting down GridCompute server...`);
     io.emit('log_event', '🛑 Server shutting down. Reconnect shortly.');
     server.close(() => { console.log('✅ Closed cleanly.'); process.exit(0); });
     setTimeout(() => process.exit(1), 5000);
@@ -773,7 +1077,7 @@ process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 process.on('uncaughtException',  (err) => console.error('💥 Uncaught exception:', err));
 process.on('unhandledRejection', (r)   => console.error('💥 Unhandled rejection:', r));
 
-server.listen(8080, '0.0.0.0', () => {
-    console.log('🚀 GridTorrent 3D running on http://localhost:8080');
+server.listen(PORT, HOST, () => {
+    console.log(`🚀 GridCompute running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
     console.log('   Press Ctrl+C to stop.');
 });

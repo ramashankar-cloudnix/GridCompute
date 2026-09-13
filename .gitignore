@@ -1,1 +1,34 @@
+# Dependencies
 node_modules/
+package-lock.json.bak
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Operating System & IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Scratch, build & temporary scripts
+run_git.js
+git_output.txt
+server_status.txt
+parse_share.*
+share_text.md
+error.txt
+
+# Uploaded ML Model binaries
+models/*.tflite
+!models/.gitkeep

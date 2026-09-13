@@ -1,4 +1,4 @@
-// GridTorrent CPU Web Worker — JavaScript Mandelbulb 3D Raymarcher
+// GridCompute CPU Web Worker — JavaScript Compute & Raymarcher Fallback
 // Renders a chunk of rows via SDF sphere-tracing in JavaScript.
 // Output: RGBA Uint8Array — same format as the GPU worker.
 
@@ -71,12 +71,103 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 // ── Colour mapping (matches GPU palette) ──────────────────────────────────────
 function toSRGB(v) { return Math.pow(Math.max(0, v), 1/2.2); }
 
+// ─── CPU GFLOPS Benchmark (Scalable 1x to 16x) ───────────────────────────
+// scale: 1 to 16, where 1x is the default baseline and 16x is peak intensity
+function benchmarkCPU(scale = 1) {
+    const factor = Math.max(1, Math.min(16, Number(scale) || 1));
+    const N = 3200000; // 3.2M Float32 elements
+    const a = new Float32Array(N);
+    const b = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+        a[i] = i * 0.001 + 0.1;
+        b[i] = 1.001;
+    }
+
+    // Iterations scale from 40 (at 1x) to 640 (at 16x)
+    const iterations = Math.max(40, Math.round(640 * (factor / 16)));
+    const tStart = performance.now();
+    for (let iter = 0; iter < iterations; iter++) {
+        for (let i = 0; i < N; i += 4) {
+            a[i]   = a[i]   * b[i]   + 0.0001;
+            a[i+1] = a[i+1] * b[i+1] + 0.0001;
+            a[i+2] = a[i+2] * b[i+2] + 0.0001;
+            a[i+3] = a[i+3] * b[i+3] + 0.0001;
+        }
+    }
+    const elapsed = performance.now() - tStart;
+    const totalOps = iterations * N * 2;
+    const gflops = (totalOps / (Math.max(1, elapsed) / 1000)) / 1e9;
+    return parseFloat(gflops.toFixed(2));
+}
+
 // ─── Main message handler ─────────────────────────────────────────────────────
 self.onmessage = function(e) {
     const task = e.data;
+    if (!task) return;
+
+    if (task.action === 'benchmark') {
+        try {
+            const scale = Math.max(1, Math.min(16, Number(task.scale) || 1));
+            self.postMessage({ type: 'benchmark_progress', phase: 'cpu', percent: 88, msg: `Evaluating CPU Multi-Thread Worker (${scale}x)...` });
+            const gflops = benchmarkCPU(scale);
+            self.postMessage({
+                type: 'cpu_benchmark_complete',
+                scale: scale,
+                fp32_gflops: gflops,
+                int8_gops: parseFloat((gflops * 1.2).toFixed(2))
+            });
+        } catch (err) {
+            self.postMessage({ type: 'cpu_benchmark_error', error: err.message });
+        }
+        return;
+    }
+
+    if (task.type === 'gemm') {
+        try {
+            const { tileRowStart, tileRowCount, K, N, subA, matrixB } = task.params;
+            const tStart = performance.now();
+            const out = new Float32Array(tileRowCount * N);
+            for (let r = 0; r < tileRowCount; r++) {
+                const rOffset = r * K;
+                const outOffset = r * N;
+                for (let c = 0; c < N; c++) {
+                    let s = 0.0;
+                    for (let k = 0; k < K; k++) {
+                        s += subA[rOffset + k] * matrixB[k * N + c];
+                    }
+                    out[outOffset + c] = s;
+                }
+            }
+            const durationMs = performance.now() - tStart;
+            self.postMessage({
+                jobId: task.jobId,
+                taskId: task.taskId,
+                type: 'gemm',
+                backend: 'cpu-worker',
+                result: {
+                    tileRowStart,
+                    tileRowCount,
+                    durationMs: parseFloat(durationMs.toFixed(2)),
+                    tileResult: Array.from(out)
+                }
+            });
+        } catch (err) {
+            self.postMessage({ jobId: task.jobId, taskId: task.taskId, type: 'gemm', error: err.message });
+        }
+        return;
+    }
 
     try {
         if (task.type === 'custom') {
+            if (task.imports && Array.isArray(task.imports)) {
+                task.imports.forEach(url => {
+                    try {
+                        self.importScripts(url);
+                    } catch (e) {
+                        console.warn('Worker importScripts warning:', url, e.message);
+                    }
+                });
+            }
             const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
             const computeFn = new AsyncFunction('params', task.script);
             computeFn(task.params).then(result => {

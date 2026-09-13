@@ -4,14 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="GridTorrent: Distributed Mandelbrot rendering across all connected devices using P2P grid computing.">
-    <title>GridTorrent | Distributed Mandelbrot Rendering Grid</title>
+    <meta name="description" content="GridCompute: High-performance distributed computing cluster utilizing ~90% system resources across dGPU, iGPU, and multi-core CPU.">
+    <title>GridCompute | 90% Resource Distributed Grid & GFLOPS Engine</title>
     <!-- Modern Premium Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="/socket.io/socket.io.js"></script>
     <script src="/NoSleep.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -30,14 +36,14 @@
             background-color: #0b0f19;
             background-image:
                 radial-gradient(at 0% 0%, hsla(160, 84%, 15%, 0.15) 0, transparent 50%),
-                radial-gradient(at 100% 0%, hsla(220, 84%, 15%, 0.15) 0, transparent 50%);
+                radial-gradient(at 100% 0%, hsla(220, 84%, 15%, 0.15) 0, transparent 50%),
+                radial-gradient(at 50% 100%, hsla(280, 84%, 15%, 0.1) 0, transparent 50%);
         }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-        /* Reconnection banner */
         #reconnect-banner {
             display: none;
             position: fixed;
@@ -55,106 +61,203 @@
     </style>
 </head>
 
-<body class="text-slate-100 font-sans min-h-screen flex flex-col p-4 md:p-8">
+<body class="text-slate-100 font-sans min-h-screen flex flex-col p-3 md:p-6">
 
-    <!-- Reconnection Banner (hidden by default) -->
-    <div id="reconnect-banner">⚡ Reconnecting to cluster server...</div>
+    <!-- Reconnection Banner -->
+    <div id="reconnect-banner">⚡ Reconnecting to cluster coordinator...</div>
 
-    <div class="max-w-6xl w-full mx-auto flex-1 flex flex-col">
+    <div class="max-w-7xl w-full mx-auto flex-1 flex flex-col">
         <!-- Premium Glassmorphic Header -->
-        <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-xl">
+        <header class="mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-xl">
             <div>
                 <div class="flex items-center gap-3">
                     <span class="flex h-4 w-4 relative">
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span class="relative inline-flex rounded-full h-4 w-4 bg-emerald-500"></span>
                     </span>
-                    <h1 class="text-3xl font-extrabold tracking-tight font-outfit bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">GridTorrent</h1>
+                    <h1 class="text-3xl font-black tracking-tight font-outfit bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">GridCompute</h1>
+                    <span class="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 uppercase tracking-wider">v2.5 High-Load</span>
                 </div>
-                <p class="text-sm text-slate-400 mt-1">Distributed 3D Mandelbulb Raymarcher &mdash; GPU + CPU Hybrid Grid</p>
+                <p class="text-xs text-slate-400 mt-1">Multi-Backend Compute Grid &bull; Collective dGPU + iGPU + Multi-Core CPU (~90% Saturation)</p>
             </div>
 
-            <div class="flex gap-3 items-center flex-wrap">
-                <div class="flex items-center gap-2 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 shadow-inner">
-                    <label for="fractal-power" class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Power:</label>
-                    <select id="fractal-power" class="bg-transparent text-emerald-400 text-sm font-bold focus:outline-none cursor-pointer">
-                        <option value="4">4</option>
-                        <option value="6">6</option>
-                        <option value="8" selected>8</option>
-                        <option value="12">12</option>
-                        <option value="16">16</option>
+            <div class="flex gap-2.5 items-center flex-wrap">
+                <!-- Resource Target Slider -->
+                <div class="flex items-center gap-2 bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 shadow-inner">
+                    <label for="resource-slider" class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Resource Target:</label>
+                    <input type="range" id="resource-slider" min="20" max="100" value="90" step="5" class="w-20 md:w-28 accent-emerald-400 cursor-pointer">
+                    <span id="resource-val" class="text-emerald-400 font-bold text-xs">90%</span>
+                </div>
+
+                <!-- Benchmark Scale Selector (1x to 16x) -->
+                <div class="flex items-center gap-1.5 bg-slate-900/90 border border-white/10 rounded-xl px-2.5 py-2 shadow-inner">
+                    <label for="bench-scale" class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Bench Scale:</label>
+                    <select id="bench-scale" class="bg-transparent text-emerald-400 font-bold text-xs focus:outline-none cursor-pointer">
+                        <option value="1" selected>1x (Default)</option>
+                        <option value="2">2x</option>
+                        <option value="3">3x</option>
+                        <option value="4">4x</option>
+                        <option value="6">6x</option>
+                        <option value="8">8x</option>
+                        <option value="10">10x</option>
+                        <option value="12">12x</option>
+                        <option value="14">14x</option>
+                        <option value="16">16x (Peak Stress)</option>
                     </select>
                 </div>
-                <div class="flex items-center gap-2 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 shadow-inner">
-                    <label for="ray-quality" class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quality:</label>
-                    <select id="ray-quality" class="bg-transparent text-emerald-400 text-sm font-bold focus:outline-none cursor-pointer">
-                        <option value="40">Low (40)</option>
-                        <option value="60">Med (60)</option>
-                        <option value="80" selected>High (80)</option>
-                        <option value="120">Ultra (120)</option>
-                        <option value="160">Max (160)</option>
-                    </select>
-                </div>
-                <button id="inject-btn" class="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 transition-all text-sm font-semibold rounded-xl shadow-lg shadow-emerald-500/20 border border-emerald-400/20 flex items-center gap-2">
-                    🔄 Reset View
+
+                <!-- 2026 GFLOPS Benchmark Button -->
+                <button id="bench-btn" class="px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 active:scale-95 transition-all text-xs font-bold rounded-xl shadow-lg shadow-emerald-500/20 border border-emerald-400/20 flex items-center gap-1.5">
+                    ⚡ Benchmark GFLOPS
                 </button>
+
+                <!-- Open Demo App Button -->
+                <a href="/demo" target="_blank" class="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 active:scale-95 transition-all text-xs font-bold rounded-xl shadow-lg shadow-indigo-500/20 border border-purple-400/20 flex items-center gap-1.5">
+                    🚀 Open Demo App
+                </a>
             </div>
         </header>
 
-        <!-- Hash Cracker Dashboard -->
-        <div id="hash-dashboard" class="hidden bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-8 flex-col items-center gap-4 text-center">
-            <h2 class="text-2xl font-bold text-slate-200">SHA-256 Brute Force Engine</h2>
-            <p class="text-sm text-slate-400">Target Hash: <span class="font-mono text-emerald-400">d7c7112040db42371a3962b9a7b97a3cf9367fbcf0b62d3a95d46e330e7ccfb0</span></p>
-            
-            <div class="w-full bg-slate-900 rounded-full h-4 overflow-hidden border border-white/10 mt-4 relative">
-                <div id="hash-progress" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-300" style="width: 0%"></div>
-            </div>
-            <div class="flex justify-between w-full text-xs text-slate-500 font-mono mt-1">
-                <span>0 Nonces</span>
-                <span id="hash-progress-text">0% Search Space</span>
+        <!-- System Resource Saturation & Telemetry Banner -->
+        <div class="mb-6 bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10 shadow-lg">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-4 mb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300">Local Node Hardware & GFLOPS Telemetry</h2>
+                        <span id="backend-tag" class="px-2 py-0.5 text-[10px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-400/30">Detecting...</span>
+                    </div>
+                    <p id="hardware-desc" class="text-xs text-slate-400 mt-1 font-mono">Probing WebGPU dGPU, iGPU, and CPU cores...</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-400/30 px-3 py-1.5 rounded-xl">
+                        <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span class="text-xs font-bold text-emerald-400">Background Keep-Alive: ACTIVE</span>
+                    </div>
+                </div>
             </div>
 
-            <div id="hash-result" class="hidden mt-6 p-4 border border-emerald-500/30 bg-emerald-500/10 rounded-xl">
-                <h3 class="text-emerald-400 font-bold text-lg">🎉 Password Cracked!</h3>
-                <p class="text-slate-300 mt-2 font-mono text-xl" id="cracked-password">grid1337</p>
-                <p class="text-sm text-slate-500 mt-2">Found by: <span id="cracked-node" class="text-emerald-400">Node</span></p>
+            <!-- GFLOPS Metrics Breakdown Grid (2026 Standards) -->
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div class="bg-black/30 border border-white/5 p-3 rounded-xl">
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">FP32 Compute</p>
+                    <p id="stat-fp32" class="text-xl font-extrabold text-cyan-400 font-outfit mt-1">-- GFLOPS</p>
+                    <span class="text-[10px] text-slate-500">Single-Precision FMA</span>
+                </div>
+                <div class="bg-black/30 border border-white/5 p-3 rounded-xl">
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">FP16 Half-Precision</p>
+                    <p id="stat-fp16" class="text-xl font-extrabold text-purple-400 font-outfit mt-1">-- GFLOPS</p>
+                    <span id="stat-fp16-sub" class="text-[10px] text-slate-500">shader-f16 standard</span>
+                </div>
+                <div class="bg-black/30 border border-white/5 p-3 rounded-xl">
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">INT8 / Quantized</p>
+                    <p id="stat-int8" class="text-xl font-extrabold text-amber-400 font-outfit mt-1">-- GOPS</p>
+                    <span class="text-[10px] text-slate-500">8-bit Dot-Product AI</span>
+                </div>
+                <div class="bg-black/30 border border-white/5 p-3 rounded-xl">
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">CPU Multi-Thread</p>
+                    <p id="stat-cpu" class="text-xl font-extrabold text-blue-400 font-outfit mt-1">-- GFLOPS</p>
+                    <span id="stat-cpu-sub" class="text-[10px] text-slate-500">Worker Pool</span>
+                </div>
+                <div class="bg-emerald-500/10 border border-emerald-400/30 p-3 rounded-xl col-span-2 sm:col-span-1">
+                    <p class="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">Total Rating</p>
+                    <p id="stat-total" class="text-xl font-black text-emerald-400 font-outfit mt-1">0.0 GFLOPS</p>
+                    <span id="stat-concurrency-sub" class="text-[10px] text-emerald-300/70">-- threads active</span>
+                </div>
             </div>
         </div>
 
-        <!-- Render Canvas -->
-        <div id="render-dashboard" class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-8 flex flex-col items-center gap-4">
-            <div class="flex justify-between w-full items-center">
-                <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">🌌 3D Mandelbulb Render</h3>
-                <span id="viewport-display" class="text-xs font-mono text-slate-500">θ=0.50 φ=0.30 d=2.50 | Power: 8</span>
+        <!-- Live Benchmark Suite & Progress Dashboard -->
+        <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-6 flex flex-col gap-5">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-400/30 flex items-center justify-center text-xl shadow-inner">
+                        ⚡
+                    </div>
+                    <div>
+                        <h2 class="text-base font-bold font-outfit text-slate-200 flex items-center gap-2">
+                            <span>Hardware Compute GFLOPS Benchmark Engine</span>
+                            <span id="bench-active-tag" class="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-800 text-slate-400 border border-white/10">Idle / Ready</span>
+                        </h2>
+                        <p id="bench-status-desc" class="text-xs text-slate-400 mt-0.5 font-mono">Select benchmark scale (1x - 16x) and click "Benchmark GFLOPS" to evaluate compute power.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="bench-time-elapsed" class="text-xs font-mono text-slate-500">Duration: 0.0s</span>
+                    <span id="bench-scale-badge" class="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-900 border border-white/10 text-emerald-400">Scale: 1x (Default)</span>
+                </div>
             </div>
-            <div class="w-full max-w-[1280px] p-2 bg-slate-950 rounded-xl border border-white/10 shadow-inner flex justify-center relative group overflow-x-auto" style="cursor: grab">
-                <canvas id="mandelbrot-canvas" width="1280" height="360" class="rounded-lg w-full min-w-[600px] bg-slate-900"></canvas>
-                <div class="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-xl">
-                    <span class="bg-slate-900/90 text-[10px] font-bold tracking-wider uppercase text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/30">Drag to Orbit &bull; Scroll to Zoom</span>
+
+            <!-- Benchmark Progress Bar -->
+            <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5">
+                <div class="flex justify-between items-center mb-2.5">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-2 rounded-full bg-slate-500" id="bench-pulse-dot"></span>
+                        <span id="bench-phase-label" class="text-xs font-bold text-slate-300 font-mono">Ready for execution</span>
+                    </div>
+                    <span id="bench-percent-text" class="text-sm font-black text-emerald-400 font-mono">0%</span>
+                </div>
+                <div class="w-full bg-slate-900 rounded-full h-4 overflow-hidden border border-white/10 p-0.5 shadow-inner">
+                    <div id="bench-progress-bar" class="bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 h-full rounded-full w-0 transition-all duration-300 shadow-[0_0_12px_rgba(52,211,153,0.6)]"></div>
+                </div>
+            </div>
+
+            <!-- Benchmark Stage Checkpoints Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div id="stage-card-fp32" class="bg-black/25 border border-white/5 p-3 rounded-xl transition-all">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase">1. FP32 Compute</span>
+                        <span id="stage-badge-fp32" class="text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/5 text-slate-400">Pending</span>
+                    </div>
+                    <p id="stage-val-fp32" class="text-sm font-black text-slate-300 font-outfit mt-1">-- GFLOPS</p>
+                    <span class="text-[10px] text-slate-500">Single-Precision FMA</span>
+                </div>
+                <div id="stage-card-fp16" class="bg-black/25 border border-white/5 p-3 rounded-xl transition-all">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase">2. FP16 Half-Prec</span>
+                        <span id="stage-badge-fp16" class="text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/5 text-slate-400">Pending</span>
+                    </div>
+                    <p id="stage-val-fp16" class="text-sm font-black text-slate-300 font-outfit mt-1">-- GFLOPS</p>
+                    <span class="text-[10px] text-slate-500">shader-f16 standard</span>
+                </div>
+                <div id="stage-card-int8" class="bg-black/25 border border-white/5 p-3 rounded-xl transition-all">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase">3. INT8 Quantized</span>
+                        <span id="stage-badge-int8" class="text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/5 text-slate-400">Pending</span>
+                    </div>
+                    <p id="stage-val-int8" class="text-sm font-black text-slate-300 font-outfit mt-1">-- GOPS</p>
+                    <span class="text-[10px] text-slate-500">8-bit Dot-Product AI</span>
+                </div>
+                <div id="stage-card-cpu" class="bg-black/25 border border-white/5 p-3 rounded-xl transition-all">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase">4. CPU Pool</span>
+                        <span id="stage-badge-cpu" class="text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/5 text-slate-400">Pending</span>
+                    </div>
+                    <p id="stage-val-cpu" class="text-sm font-black text-slate-300 font-outfit mt-1">-- GFLOPS</p>
+                    <span class="text-[10px] text-slate-500">Multi-Core Saturation</span>
                 </div>
             </div>
         </div>
 
         <!-- Stats Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
             <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg hover:border-white/15 transition-all">
-                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Cluster Capacity</p>
-                <p id="total-gcu" class="text-4xl font-black text-emerald-400 mt-2 font-outfit">0.0 GCUs</p>
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Cluster GFLOPS</p>
+                <p id="total-gcu" class="text-4xl font-black text-emerald-400 mt-2 font-outfit">0.0 GFLOPS</p>
             </div>
             <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg hover:border-white/15 transition-all">
                 <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Computing Nodes</p>
                 <p id="device-count" class="text-4xl font-black text-blue-400 mt-2 font-outfit">0</p>
             </div>
             <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg hover:border-white/15 transition-all">
-                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rendering Job Progress</p>
-                <p id="task-progress" class="text-4xl font-black text-purple-400 mt-2 font-outfit">0 / 36</p>
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cluster Workload Tasks Solved</p>
+                <p id="task-progress" class="text-4xl font-black text-purple-400 mt-2 font-outfit">0 / 0</p>
             </div>
         </div>
 
         <!-- Progress Bar -->
-        <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-8">
+        <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-lg mb-6">
             <div class="flex justify-between items-center mb-3">
-                <span class="text-sm font-semibold text-slate-300">Cluster Computing Execution Progress</span>
+                <span class="text-sm font-semibold text-slate-300">Cluster Workload Execution Progress (API & Demo App Jobs)</span>
                 <span id="progress-percent" class="text-sm font-bold text-emerald-400">0%</span>
             </div>
             <div class="w-full bg-slate-800 rounded-full h-3.5 overflow-hidden border border-white/5">
@@ -162,11 +265,11 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
             <!-- Active Nodes -->
             <div class="lg:col-span-2 flex flex-col">
                 <h2 class="text-lg font-bold font-outfit mb-4 text-slate-300 flex items-center gap-2">
-                    <span>📡</span> Live Node Connections
+                    <span>📡</span> Live Grid Node Connections
                 </h2>
                 <div id="nodes-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 content-start">
                     <!-- Dynamic Node Cards -->
@@ -179,25 +282,19 @@
                     <span>📝</span> Live Activity Log
                 </h2>
                 <div id="log-container" class="flex-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-4 font-mono text-xs text-slate-400 overflow-y-auto custom-scrollbar flex flex-col gap-2" style="max-height: 400px; min-height: 200px;">
-                    <div class="text-slate-500">[System] Initializing network listener...</div>
+                    <div class="text-slate-500">[System] Initializing GridCompute multi-backend compute engine...</div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // ─── Socket & Canvas setup ───────────────────────────────────────────────
+        // ─── Socket Setup ───────────────────────────────────────────────────────
         const socket = io({ reconnectionDelay: 1000, reconnectionDelayMax: 5000 });
-        const canvas = document.getElementById('mandelbrot-canvas');
-        const ctx = canvas.getContext('2d');
         const logContainer = document.getElementById('log-container');
         const reconnectBanner = document.getElementById('reconnect-banner');
         const MAX_LOG_ENTRIES = 200;
 
-        // (3D rendering state declared further below)
-
-        // ─── Local log (no socket.emit to avoid log injection) ────────────────────
-        // BUG 7 FIX: All client-side status messages go directly to local DOM.
         function localLog(msg) {
             const time = new Date().toLocaleTimeString();
             const entry = document.createElement('div');
@@ -205,173 +302,256 @@
             entry.innerHTML = `<span class="text-slate-600">[${time}]</span> ${msg}`;
             logContainer.appendChild(entry);
             logContainer.scrollTop = logContainer.scrollHeight;
-
-            // BUG 5 FIX: Cap log at MAX_LOG_ENTRIES entries to prevent DOM memory leak
             while (logContainer.children.length > MAX_LOG_ENTRIES) {
                 logContainer.removeChild(logContainer.firstChild);
             }
         }
 
-        // ─── Web Worker setup ────────────────────────────────────────────────────
-        const maxWorkers = Math.max(1, Math.floor((navigator.hardwareConcurrency || 4) * 0.75));
-        const computeWorkers = [];
+        // ─── System Resource Target (~90%) Sizing ────────────────────────────────
+        let resourceTargetPercent = 90;
+        const totalLogicalCores = navigator.hardwareConcurrency || 4;
+
+        function calculateCpuWorkerCount(ratioPercent) {
+            // ~90% resource utilization: scales CPU cores accordingly
+            const targetFraction = Math.max(0.2, Math.min(1.0, ratioPercent / 100));
+            return Math.max(1, Math.round(totalLogicalCores * targetFraction));
+        }
+
+        let activeCpuWorkerCount = calculateCpuWorkerCount(resourceTargetPercent);
+
+        // ─── Multi-Backend Worker Architecture ───────────────────────────────────
+        let dgpuWorker = null;
+        let igpuWorker = null;
+        let webglWorker = null;
+        const cpuWorkers = [];
         const idleWorkers = [];
         const taskQueue = [];
 
-        // Check for WebGL2 + OffscreenCanvas support
-        const hasGPU = typeof OffscreenCanvas !== 'undefined' && 
-                       (() => {
-                           try {
-                               const canvas = new OffscreenCanvas(1, 1);
-                               return !!canvas.getContext('webgl2');
-                           } catch (e) {
-                               return false;
-                           }
-                       })();
+        let dgpuName = null;
+        let igpuName = null;
+        let webglName = null;
+        let activeBackends = [];
 
-        let gpuActive = false;
-        let gpuWorker = null;
-        let gpuDisabled = false;
+        let benchmarkResults = {
+            fp32_gflops: 0,
+            fp16_gflops: 0,
+            fp16_supported: false,
+            int8_gops: 0,
+            cpu_gflops: 0,
+            total_gflops: 0
+        };
+        let benchmarkDone = false;
 
-        function getConcurrency() {
-            return maxWorkers + (gpuWorker && !gpuDisabled ? 2 : 0);
-        }
-
-        function registerNode() {
-            if (!benchmarkDone) return;
-            const currentGpuName = gpuWorker && !gpuDisabled ? profile.gpu : `${profile.gpu} (WebGL Disabled)`;
-            socket.emit('register_node', {
-                name: profile.name,
-                cpu: profile.cpu,
-                gpu: currentGpuName,
-                gcu: calculatedGCU,
-                concurrency: getConcurrency()
-            });
-        }
-
-        function disableGPU(reason) {
-            if (gpuDisabled) return;
-            gpuDisabled = true;
-            localLog(`⚠️ GPU worker permanently disabled: ${reason}. Falling back to CPU.`);
-            
-            const idx = idleWorkers.indexOf(gpuWorker);
-            if (idx !== -1) {
-                idleWorkers.splice(idx, 1);
+        // ─── Probe WebGPU Adapters (dGPU + iGPU) ──────────────────────────────────
+        async function probeWebGPU() {
+            if (typeof navigator === 'undefined' || !navigator.gpu) {
+                return { supported: false, dual: false, dgpu: null, igpu: null };
             }
-            
+
             try {
-                gpuWorker.terminate();
-            } catch(e) {}
-            
-            registerNode();
-            
-            const task = gpuWorker.activeTask;
-            if (task) {
-                const desc = task.type === 'mandelbulb' ? `block Y=${task.yStart}` : `Job ${task.jobId} Task ${task.taskId}`;
-                localLog(`♻️ Re-queuing ${desc} to CPU worker.`);
-                taskQueue.unshift(task);
-            }
-            
-            processQueue();
-        }
+                // Request high-performance adapter (dGPU)
+                const dgpuAdapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+                // Request low-power adapter (iGPU)
+                const igpuAdapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
 
-        if (hasGPU) {
-            gpuWorker = new Worker('/worker_gpu.js');
-            gpuWorker.isGPU = true; // Tag it as GPU worker
-            gpuWorker.onerror = function(err) {
-                console.warn('GPU Worker crash:', err);
-                disableGPU('Worker thread crashed or could not be loaded');
-            };
-            gpuWorker.onmessage = function(e) {
-                if (gpuDisabled) return;
-                const result = e.data;
-                if (result.error) {
-                    disableGPU(result.error);
-                } else {
-                    if (!gpuActive) {
-                        gpuActive = true;
-                        localLog('🚀 Hardware-Accelerated GPU Compute Active (Mandelbulb 3D)!');
-                    }
-                    socket.emit('task_completed', { jobId: 'mandelbulb', taskId: 'yStart_' + result.yStart, yStart: result.yStart, chunkHeight: result.chunkHeight, pixels: result.pixels });
-                    if (!gpuDisabled) {
-                        idleWorkers.push(gpuWorker);
-                    }
-                    processQueue();
+                if (!dgpuAdapter && !igpuAdapter) {
+                    return { supported: false, dual: false, dgpu: null, igpu: null };
                 }
-            };
-            computeWorkers.push(gpuWorker);
-            idleWorkers.push(gpuWorker);
-        } else {
-            localLog('⚠️ GPU acceleration not supported on this browser/device. Running CPU fallback.');
+
+                let dName = 'High-Performance GPU';
+                let iName = 'Integrated GPU';
+
+                if (dgpuAdapter && dgpuAdapter.info) {
+                    dName = dgpuAdapter.info.description || dgpuAdapter.info.device || dName;
+                    if (dgpuAdapter.info.vendor) dName = `${dgpuAdapter.info.vendor} ${dName}`.trim();
+                }
+                if (igpuAdapter && igpuAdapter.info) {
+                    iName = igpuAdapter.info.description || igpuAdapter.info.device || iName;
+                    if (igpuAdapter.info.vendor) iName = `${igpuAdapter.info.vendor} ${iName}`.trim();
+                }
+
+                const isDual = dgpuAdapter && igpuAdapter && (dName !== iName || dgpuAdapter !== igpuAdapter);
+                return {
+                    supported: true,
+                    dual: isDual,
+                    dgpu: dName,
+                    igpu: isDual ? iName : null
+                };
+            } catch (err) {
+                console.warn('WebGPU probe error:', err);
+                return { supported: false, dual: false, dgpu: null, igpu: null };
+            }
         }
 
-        // 2. Initialize CPU Workers
-        for (let i = 0; i < maxWorkers; i++) {
-            const worker = new Worker('/worker.js');
-            worker.isGPU = false; // Tag it as CPU worker
+        // ─── Initialize Compute Workers ──────────────────────────────────────────
+        async function initComputeWorkers() {
+            const gpuInfo = await probeWebGPU();
 
+            if (gpuInfo.supported) {
+                // WebGPU Supported
+                dgpuName = gpuInfo.dgpu;
+                activeBackends.push('webgpu-dgpu');
+                dgpuWorker = new Worker('/worker_webgpu.js');
+                dgpuWorker.isGPU = true;
+                dgpuWorker.backendType = 'webgpu-dgpu';
+                setupWorkerListeners(dgpuWorker);
+                dgpuWorker.postMessage({ action: 'init', powerPreference: 'high-performance' });
+                idleWorkers.push(dgpuWorker);
+
+                if (gpuInfo.dual && gpuInfo.igpu) {
+                    igpuName = gpuInfo.igpu;
+                    activeBackends.push('webgpu-igpu');
+                    igpuWorker = new Worker('/worker_webgpu.js');
+                    igpuWorker.isGPU = true;
+                    igpuWorker.backendType = 'webgpu-igpu';
+                    setupWorkerListeners(igpuWorker);
+                    igpuWorker.postMessage({ action: 'init', powerPreference: 'low-power' });
+                    idleWorkers.push(igpuWorker);
+                    localLog(`⚡ Multi-GPU Detected! Collective dGPU [${dgpuName}] + iGPU [${igpuName}] initialized.`);
+                } else {
+                    localLog(`⚡ WebGPU Compute Active on [${dgpuName}].`);
+                }
+            } else {
+                // Fallback: WebGL2 (Universal on 5-7 year old devices)
+                const hasWebGL2 = typeof OffscreenCanvas !== 'undefined' && (() => {
+                    try { return !!(new OffscreenCanvas(1,1)).getContext('webgl2'); } catch(e) { return false; }
+                })();
+
+                if (hasWebGL2) {
+                    webglWorker = new Worker('/worker_gpu.js');
+                    webglWorker.isGPU = true;
+                    webglWorker.backendType = 'webgl2';
+                    setupWorkerListeners(webglWorker);
+                    idleWorkers.push(webglWorker);
+                    activeBackends.push('webgl2');
+                    localLog('⚡ WebGL2 GPGPU fallback active (Legacy 5-7yr Hardware Supported).');
+                } else {
+                    localLog('⚠️ No GPU context available. Running on CPU Web Workers.');
+                }
+            }
+
+            // Spawn CPU Workers (~90% allocation)
+            syncCpuWorkerPool(activeCpuWorkerCount);
+            updateHardwareDisplay();
+        }
+
+        function setupWorkerListeners(worker) {
             worker.onerror = function(err) {
-                console.error('Worker crashed:', err);
-                localLog(`💥 Web Worker error: ${err.message || 'Unknown error'}.`);
+                console.error(`Worker error (${worker.backendType}):`, err);
+                localLog(`⚠️ Worker error: ${err.message || 'Worker thread error'}`);
             };
 
             worker.onmessage = function(e) {
-                const result = e.data;
-                if (result.jobId && result.jobId !== 'mandelbulb') {
-                    if (result.error) {
-                        localLog(`⚠️ Worker error on Job ${result.jobId} Task ${result.taskId}: ${result.error}`);
-                        socket.emit('task_completed', { jobId: result.jobId, taskId: result.taskId, error: result.error });
-                    } else {
-                        socket.emit('task_completed', { jobId: result.jobId, taskId: result.taskId, result: result.result });
-                    }
-                } else {
-                    if (result.error) {
-                        localLog(`⚠️ Worker error on block Y=${result.yStart}: ${result.error}`);
-                        if (result.yStart >= 0) socket.emit('task_completed', { jobId: 'mandelbulb', taskId: 'yStart_' + result.yStart, yStart: result.yStart, chunkHeight: result.chunkHeight || 1, pixels: [] });
-                    } else {
-                        socket.emit('task_completed', { jobId: 'mandelbulb', taskId: 'yStart_' + result.yStart, yStart: result.yStart, chunkHeight: result.chunkHeight, pixels: result.pixels });
-                    }
+                const data = e.data;
+                if (!data) return;
+
+                if (data.type === 'init_complete') {
+                    localLog(`✅ Hardware Worker Ready: ${data.gpuName} (${data.powerPreference}) [f16=${data.hasF16}]`);
+                    return;
                 }
-                
+
+                // Handle Mandelbulb row completion
+                if (data.pixels && typeof data.yStart === 'number') {
+                    socket.emit('task_completed', {
+                        jobId: 'mandelbulb',
+                        taskId: 'yStart_' + data.yStart,
+                        yStart: data.yStart,
+                        chunkHeight: data.chunkHeight,
+                        pixels: data.pixels,
+                        backend: worker.backendType
+                    });
+                }
+                // Handle GEMM tile completion
+                else if (data.type === 'gemm') {
+                    socket.emit('task_completed', {
+                        jobId: data.jobId,
+                        taskId: data.taskId,
+                        backend: data.backend || worker.backendType,
+                        result: data.result,
+                        error: data.error
+                    });
+                }
+                // Handle generic/custom task completion
+                else if (data.jobId) {
+                    socket.emit('task_completed', {
+                        jobId: data.jobId,
+                        taskId: data.taskId,
+                        backend: worker.backendType,
+                        result: data.result,
+                        error: data.error
+                    });
+                }
+
                 idleWorkers.push(worker);
                 processQueue();
             };
-            
-            computeWorkers.push(worker);
-            idleWorkers.push(worker);
         }
 
+        function syncCpuWorkerPool(targetCount) {
+            // Scale up
+            while (cpuWorkers.length < targetCount) {
+                const w = new Worker('/worker.js');
+                w.isGPU = false;
+                w.backendType = 'cpu-worker';
+                setupWorkerListeners(w);
+                cpuWorkers.push(w);
+                idleWorkers.push(w);
+            }
+            // Scale down
+            while (cpuWorkers.length > targetCount) {
+                const w = cpuWorkers.pop();
+                const idx = idleWorkers.indexOf(w);
+                if (idx !== -1) idleWorkers.splice(idx, 1);
+                try { w.terminate(); } catch (_) {}
+            }
+            if (!activeBackends.includes('cpu')) activeBackends.push('cpu');
+        }
+
+        function getConcurrency() {
+            let count = cpuWorkers.length;
+            if (dgpuWorker) count += 2;
+            if (igpuWorker) count += 2;
+            if (webglWorker) count += 2;
+            return count;
+        }
+
+        // ─── Prefetched Task Queue Processing ────────────────────────────────────
         function processQueue() {
             if (taskQueue.length === 0 || idleWorkers.length === 0) return;
-            
+
             for (let tIdx = 0; tIdx < taskQueue.length; tIdx++) {
                 const task = taskQueue[tIdx];
-                
+
                 let wIdx = -1;
-                if (task.type === 'custom') {
-                    wIdx = idleWorkers.findIndex(w => !w.isGPU);
-                } else {
+                // Workload-to-backend routing
+                if (task.type === 'gemm') {
+                    // Prefer dGPU, then iGPU, then WebGL, then CPU
+                    wIdx = idleWorkers.findIndex(w => w.backendType === 'webgpu-dgpu');
+                    if (wIdx === -1) wIdx = idleWorkers.findIndex(w => w.backendType === 'webgpu-igpu');
+                    if (wIdx === -1) wIdx = idleWorkers.findIndex(w => w.backendType === 'webgl2');
+                    if (wIdx === -1) wIdx = idleWorkers.findIndex(w => !w.isGPU);
+                } else if (task.type === 'mandelbulb') {
+                    // GPU preferred for Mandelbulb raymarching
                     wIdx = idleWorkers.findIndex(w => w.isGPU);
-                    if (wIdx === -1) {
-                        wIdx = idleWorkers.length - 1;
-                    }
+                    if (wIdx === -1) wIdx = idleWorkers.findIndex(w => !w.isGPU);
+                } else {
+                    // Custom JS / generic task
+                    wIdx = idleWorkers.findIndex(w => !w.isGPU);
+                    if (wIdx === -1) wIdx = idleWorkers.length - 1;
                 }
-                
+
                 if (wIdx !== -1) {
                     taskQueue.splice(tIdx, 1);
                     const worker = idleWorkers.splice(wIdx, 1)[0];
-                    
                     worker.activeTask = task;
                     worker.postMessage(task);
-                    
                     tIdx--;
-                    
                     if (taskQueue.length === 0 || idleWorkers.length === 0) break;
                 }
             }
         }
 
-        // ─── Keep-Alive: Silent audio context ────────────────────────────────────
+        // ─── Keep-Alive System (Background Persistence) ──────────────────────────
         let audioCtx = null;
         function keepAliveAudio() {
             if (audioCtx) return;
@@ -385,13 +565,12 @@
                 oscillator.connect(gainNode);
                 gainNode.connect(audioCtx.destination);
                 oscillator.start(0);
-                localLog('🔊 Background audio keep-alive activated.');
+                localLog('🔊 Silent Web Audio loop initialized (OS sleep prevention).');
             } catch (e) {
-                console.warn('Web Audio keepalive error:', e);
+                console.warn('Audio keepalive error:', e);
             }
         }
 
-        // ─── Keep-Alive: Screen Wake Lock + NoSleep.js ───────────────────────────
         let wakeLock = null;
         const noSleep = new NoSleep();
 
@@ -402,381 +581,409 @@
                     localLog('🔒 Screen Wake Lock acquired.');
                     wakeLock.addEventListener('release', () => { wakeLock = null; });
                 } else {
-                    // Fallback: NoSleep.js hidden video loop
-                    noSleep.enable().then(() => {
-                        localLog('🔒 NoSleep.js video-loop keep-alive enabled.');
-                    }).catch(err => console.warn('NoSleep enable failed:', err));
+                    noSleep.enable().then(() => localLog('🔒 NoSleep.js video loop enabled.'));
                 }
             } catch (err) {
-                console.warn('Wake Lock error:', err);
-                // Fallback: NoSleep.js
-                noSleep.enable().then(() => {
-                    localLog('🔒 NoSleep.js fallback enabled (wake lock failed).');
-                }).catch(e => console.warn('NoSleep fallback failed:', e));
+                noSleep.enable().then(() => localLog('🔒 NoSleep.js video fallback active.'));
             }
         }
 
-        // Re-acquire wake lock when tab becomes visible again
+        // Web Locks API lease to maintain background execution priority
+        if ('locks' in navigator) {
+            navigator.locks.request('gridcompute_background_lease', { mode: 'shared' }, async () => {
+                return new Promise(() => { /* hold forever */ });
+            }).catch(() => {});
+        }
+
         document.addEventListener('visibilitychange', async () => {
             if (document.visibilityState === 'visible') {
                 if (wakeLock === null) await requestWakeLock();
-                if (audioCtx && audioCtx.state === 'suspended') {
-                    await audioCtx.resume();
-                    localLog('🔊 Audio keep-alive resumed after tab focus.');
-                }
+                if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+            } else {
+                localLog('🌙 Tab switched to background. Persistence engine keeping workers active.');
             }
         });
 
-        // Activate keep-alive on first user interaction (required by browser policy)
         const enableKeepAlive = () => { keepAliveAudio(); requestWakeLock(); };
         document.addEventListener('click', enableKeepAlive, { once: true });
         document.addEventListener('touchstart', enableKeepAlive, { once: true });
 
-        // ─── Hardware Info ────────────────────────────────────────────────────────
-        function getGPUName() {
-            let gpu = 'Unknown GPU';
-            try {
-                const canvas = document.createElement('canvas');
-                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                if (gl) {
-                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-                    if (debugInfo) {
-                        gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-                    }
-                }
-            } catch (e) {}
+        // ─── 2026 GFLOPS Benchmark Suite (FP32, FP16, INT8, CPU — Scalable 1x to 16x) ─
+        async function runFullBenchmark(scaleOverride) {
+            const scaleEl = document.getElementById('bench-scale');
+            const scale = Math.max(1, Math.min(16, Number(scaleOverride || (scaleEl ? scaleEl.value : 1)) || 1));
+            
+            // Progress & telemetry elements
+            const benchBtn = document.getElementById('bench-btn');
+            const benchBar = document.getElementById('bench-progress-bar');
+            const benchPercent = document.getElementById('bench-percent-text');
+            const benchPhase = document.getElementById('bench-phase-label');
+            const benchStatus = document.getElementById('bench-status-desc');
+            const benchTag = document.getElementById('bench-active-tag');
+            const benchPulse = document.getElementById('bench-pulse-dot');
+            const benchTime = document.getElementById('bench-time-elapsed');
+            const scaleBadge = document.getElementById('bench-scale-badge');
 
-            // Strip ANGLE wrapper — e.g. "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics, D3D11)"
-            const angleMatch = gpu.match(/ANGLE \((.+)\)/);
-            if (angleMatch) {
-                const parts = angleMatch[1].split(',').map(s => s.trim());
-                let best = '';
-                for (const p of parts) {
-                    if (/^D3D/i.test(p) || /^OpenGL/i.test(p) || /^Vulkan/i.test(p)) continue;
-                    if (p.length > best.length) best = p;
-                }
-                gpu = best || parts[0];
+            if (scaleBadge) scaleBadge.innerText = `Scale: ${scale}x${scale === 1 ? ' (Default)' : scale === 16 ? ' (Peak)' : ''}`;
+            if (benchBtn) {
+                benchBtn.disabled = true;
+                benchBtn.innerText = `⏳ Benchmarking (${scale}x)...`;
+            }
+            if (benchTag) {
+                benchTag.className = 'px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-500/20 text-amber-400 border border-amber-400/30 animate-pulse';
+                benchTag.innerText = `Running (${scale}x)...`;
+            }
+            if (benchPulse) benchPulse.className = 'h-2 w-2 rounded-full bg-emerald-400 animate-pulse';
+
+            // Reset checkpoint stage badges
+            ['fp32', 'fp16', 'int8', 'cpu'].forEach(s => {
+                const b = document.getElementById(`stage-badge-${s}`);
+                const v = document.getElementById(`stage-val-${s}`);
+                if (b) { b.innerText = 'Pending'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/5 text-slate-400'; }
+                if (v) { v.innerText = '-- GFLOPS'; v.className = 'text-sm font-black text-slate-400 font-outfit mt-1'; }
+            });
+
+            const tStart = performance.now();
+            const timerInterval = setInterval(() => {
+                const sec = ((performance.now() - tStart) / 1000).toFixed(1);
+                if (benchTime) benchTime.innerText = `Duration: ${sec}s`;
+            }, 100);
+
+            const updateBenchUI = (percent, phaseMsg, detailMsg) => {
+                if (benchBar) benchBar.style.width = `${percent}%`;
+                if (benchPercent) benchPercent.innerText = `${percent}%`;
+                if (benchPhase) benchPhase.innerText = phaseMsg;
+                if (detailMsg && benchStatus) benchStatus.innerText = detailMsg;
+            };
+
+            updateBenchUI(5, `Starting ${scale}x GFLOPS Benchmark suite...`, `Evaluating compute pipelines at ${scale}x intensity.`);
+            localLog(`🚀 Running ${scale}x scaled GFLOPS benchmark across GPU & CPU (16x = peak intensity)...`);
+
+            let fp32 = 0, fp16 = 0, fp16Supported = false, int8 = 0, cpuGflops = 0;
+
+            // 1. Run GPU Benchmark
+            if (dgpuWorker) {
+                try {
+                    const gpuRes = await new Promise((resolve) => {
+                        const bWorker = new Worker('/worker_webgpu.js');
+                        bWorker.onmessage = (e) => {
+                            if (e.data.type === 'benchmark_progress') {
+                                updateBenchUI(e.data.percent, e.data.msg);
+                                if (e.data.phase === 'fp32') {
+                                    const b = document.getElementById('stage-badge-fp32');
+                                    if (b) { b.innerText = 'Testing...'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-400/30'; }
+                                } else if (e.data.phase === 'fp32_done') {
+                                    const b = document.getElementById('stage-badge-fp32');
+                                    const v = document.getElementById('stage-val-fp32');
+                                    if (b) { b.innerText = 'Done'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-400/30'; }
+                                    if (v) { v.innerText = `${e.data.fp32} GFLOPS`; v.className = 'text-sm font-black text-cyan-400 font-outfit mt-1'; }
+                                } else if (e.data.phase === 'fp16') {
+                                    const b = document.getElementById('stage-badge-fp16');
+                                    if (b) { b.innerText = 'Testing...'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-purple-500/20 text-purple-300 border border-purple-400/30'; }
+                                } else if (e.data.phase === 'fp16_done') {
+                                    const b = document.getElementById('stage-badge-fp16');
+                                    const v = document.getElementById('stage-val-fp16');
+                                    if (b) {
+                                        b.innerText = e.data.fp16Supported ? 'Done' : 'Unsupported';
+                                        b.className = e.data.fp16Supported ? 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-400/30' : 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/10 text-slate-400';
+                                    }
+                                    if (v) {
+                                        v.innerText = e.data.fp16Supported ? `${e.data.fp16} GFLOPS` : 'Unsupported';
+                                        v.className = e.data.fp16Supported ? 'text-sm font-black text-purple-400 font-outfit mt-1' : 'text-sm font-bold text-slate-500 font-outfit mt-1';
+                                    }
+                                } else if (e.data.phase === 'int8') {
+                                    const b = document.getElementById('stage-badge-int8');
+                                    if (b) { b.innerText = 'Testing...'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-500/20 text-amber-300 border border-amber-400/30'; }
+                                } else if (e.data.phase === 'int8_done') {
+                                    const b = document.getElementById('stage-badge-int8');
+                                    const v = document.getElementById('stage-val-int8');
+                                    if (b) { b.innerText = 'Done'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-400/30'; }
+                                    if (v) { v.innerText = `${e.data.int8} GOPS`; v.className = 'text-sm font-black text-amber-400 font-outfit mt-1'; }
+                                }
+                            } else if (e.data.type === 'benchmark_complete') {
+                                bWorker.terminate();
+                                resolve(e.data);
+                            } else if (e.data.type === 'benchmark_error') {
+                                bWorker.terminate();
+                                resolve(null);
+                            }
+                        };
+                        bWorker.postMessage({ action: 'benchmark', powerPreference: 'high-performance', scale: scale });
+                    });
+                    if (gpuRes) {
+                        fp32 = gpuRes.fp32_gflops;
+                        fp16 = gpuRes.fp16_gflops;
+                        fp16Supported = gpuRes.fp16_supported;
+                        int8 = gpuRes.int8_gops;
+                    }
+                } catch (_) {}
+            } else if (webglWorker) {
+                try {
+                    const glRes = await new Promise((resolve) => {
+                        const bWorker = new Worker('/worker_gpu.js');
+                        bWorker.onmessage = (e) => {
+                            if (e.data.type === 'benchmark_progress') {
+                                updateBenchUI(e.data.percent, e.data.msg);
+                                if (e.data.phase === 'webgl_done') {
+                                    const b = document.getElementById('stage-badge-fp32');
+                                    const v = document.getElementById('stage-val-fp32');
+                                    if (b) { b.innerText = 'Done'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/20 text-emerald-400'; }
+                                    if (v) { v.innerText = `${e.data.fp32} GFLOPS`; v.className = 'text-sm font-black text-cyan-400 font-outfit mt-1'; }
+                                }
+                            } else if (e.data.type === 'benchmark_complete') {
+                                bWorker.terminate();
+                                resolve(e.data);
+                            } else {
+                                bWorker.terminate();
+                                resolve(null);
+                            }
+                        };
+                        bWorker.postMessage({ action: 'benchmark', scale: scale });
+                    });
+                    if (glRes) {
+                        fp32 = glRes.fp32_gflops;
+                        int8 = glRes.int8_gops;
+                    }
+                } catch (_) {}
             }
 
-            // Remove trademarks, shader versions, and hex device IDs like (0x0000)
-            gpu = gpu.replace(/Direct3D[0-9]*/i, '')
-                     .replace(/vs_[0-9_]+\s*ps_[0-9_]+/i, '')
-                     .replace(/\(R\)/gi, '')
-                     .replace(/\(TM\)/gi, '')
-                     .replace(/\(0x[0-9a-fA-F]+\)/g, '')
-                     .replace(/\s{2,}/g, ' ')
-                     .trim();
+            // 2. Run CPU Benchmark
+            try {
+                const b = document.getElementById('stage-badge-cpu');
+                if (b) { b.innerText = 'Testing...'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-500/20 text-blue-300 border border-blue-400/30'; }
+                updateBenchUI(85, `Evaluating CPU Multi-Thread Worker Pool (${scale}x)...`);
 
-            // Remove duplicate brand prefix ("Intel Intel Iris" → "Intel Iris")
-            gpu = gpu.replace(/^(Intel)\s+\1/i, '$1')
-                     .replace(/^(AMD)\s+\1/i, '$1')
-                     .replace(/^(NVIDIA)\s+\1/i, '$1')
-                     .trim();
-
-            return gpu || 'Unknown GPU';
-        }
-
-        // ─── Device Profile ───────────────────────────────────────────────────────
-        function getDeviceProfile() {
-            const ua = navigator.userAgent;
-            let profile = { name: '🐧 Linux Node', icon: '🖥️' };
-            if (/Android/i.test(ua))     profile = { name: '📱 Android Device', icon: '📱' };
-            else if (/iPhone|iPad/i.test(ua)) profile = { name: '📱 iOS Device',     icon: '📱' };
-            else if (/Macintosh/i.test(ua))   profile = { name: '🍏 Mac Computer',   icon: '💻' };
-            else if (/Windows/i.test(ua))     profile = { name: '💻 Windows Laptop', icon: '💻' };
-            
-            profile.cpu = `${navigator.hardwareConcurrency || '?'} Logical Cores`;
-            profile.gpu = getGPUName();
-            return profile;
-        }
-
-        const profile = getDeviceProfile();
-        let calculatedGCU = 0; // will be set after benchmark completes
-
-        // ─── Accurate GCU Benchmark (runs inside the Web Worker) ─────────────────
-        // Uses the same Mandelbrot kernel as actual tasks, timed for 150ms.
-        // Running in the worker thread avoids main-thread throttling on mobile,
-        // and produces scores that directly reflect real computation throughput.
-        function runWorkerBenchmark() {
-            return new Promise((resolve) => {
-                const benchWorker = new Worker('/worker.js');
-                let rowsCompleted = 0;
-                const BENCH_MS = 150;   // benchmark window
-                const startTime = performance.now();
-
-                // Send benchmark rows one by one for BENCH_MS ms
-                function sendBenchRow(yStart) {
-                    benchWorker.postMessage({
-                        yStart: yStart, chunkHeight: 1,
-                        width: 64, height: 32,
-                        camTheta: 0.5, camPhi: 0.3, camDist: 2.5,
-                        power: 8,
-                        maxSteps: 6  // very low — just measures throughput
-                    });
+                const cRes = await new Promise((resolve) => {
+                    const cWorker = new Worker('/worker.js');
+                    cWorker.onmessage = (e) => {
+                        if (e.data.type === 'benchmark_progress') {
+                            updateBenchUI(e.data.percent, e.data.msg);
+                        } else if (e.data.type === 'cpu_benchmark_complete') {
+                            cWorker.terminate();
+                            resolve(e.data);
+                        } else {
+                            cWorker.terminate();
+                            resolve(null);
+                        }
+                    };
+                    cWorker.postMessage({ action: 'benchmark', scale: scale });
+                });
+                if (cRes) {
+                    cpuGflops = parseFloat((cRes.fp32_gflops * activeCpuWorkerCount).toFixed(2));
+                    const b = document.getElementById('stage-badge-cpu');
+                    const v = document.getElementById('stage-val-cpu');
+                    if (b) { b.innerText = 'Done'; b.className = 'text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-400/30'; }
+                    if (v) { v.innerText = `${cpuGflops} GFLOPS`; v.className = 'text-sm font-black text-blue-400 font-outfit mt-1'; }
                 }
+            } catch (_) {}
 
-                benchWorker.onmessage = () => {
-                    rowsCompleted++;
-                    const elapsed = performance.now() - startTime;
-                    if (elapsed < BENCH_MS) {
-                        sendBenchRow(rowsCompleted % 30);
-                    } else {
-                        benchWorker.terminate();
-                        // GCU = rows per second (scaled for display)
-                        const rowsPerSec = (rowsCompleted / elapsed) * 1000;
-                        const totalGcu = Math.round(rowsPerSec * maxWorkers);
-                        resolve(parseFloat(totalGcu.toFixed(1)));
-                    }
-                };
+            clearInterval(timerInterval);
+            const totalSec = ((performance.now() - tStart) / 1000).toFixed(2);
+            if (benchTime) benchTime.innerText = `Duration: ${totalSec}s`;
 
-                benchWorker.onerror = () => {
-                    benchWorker.terminate();
-                    resolve(1.0); // safe fallback
-                };
+            const totalScore = parseFloat((fp32 + (fp16Supported ? fp16 : fp32) + int8 / 2 + cpuGflops).toFixed(2));
 
-                sendBenchRow(0);
+            benchmarkResults = {
+                scale: scale,
+                fp32_gflops: fp32,
+                fp16_gflops: fp16,
+                fp16_supported: fp16Supported,
+                int8_gops: int8,
+                cpu_gflops: cpuGflops,
+                total_gflops: totalScore
+            };
+            benchmarkDone = true;
+
+            updateBenchUI(100, `Benchmark Complete: ${totalScore} GFLOPS Achieved!`, `Benchmarked in ${totalSec}s at ${scale}x scale. Total cluster rating updated.`);
+            if (benchTag) {
+                benchTag.className = 'px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-400/30';
+                benchTag.innerText = `Active: ${totalScore.toFixed(1)} GFLOPS`;
+            }
+            if (benchPulse) benchPulse.className = 'h-2 w-2 rounded-full bg-emerald-400';
+
+            // Update UI
+            document.getElementById('stat-fp32').innerText = `${fp32.toFixed(1)} GFLOPS`;
+            document.getElementById('stat-fp16').innerText = fp16Supported ? `${fp16.toFixed(1)} GFLOPS` : 'Unsupported';
+            document.getElementById('stat-fp16-sub').innerText = fp16Supported ? '16-bit half-precision' : '5-7yr GPU (No f16)';
+            document.getElementById('stat-int8').innerText = `${int8.toFixed(1)} GOPS`;
+            document.getElementById('stat-cpu').innerText = `${cpuGflops.toFixed(1)} GFLOPS`;
+            document.getElementById('stat-total').innerText = `${totalScore.toFixed(1)} GFLOPS`;
+            document.getElementById('stat-concurrency-sub').innerText = `${getConcurrency()} active pipelines (${scale}x bench)`;
+
+            if (benchBtn) {
+                benchBtn.disabled = false;
+                benchBtn.innerText = '⚡ Benchmark GFLOPS';
+            }
+
+            localLog(`📊 Benchmark Results (${scale}x in ${totalSec}s): FP32=${fp32} GFLOPS | FP16=${fp16Supported ? fp16 + ' GFLOPS' : 'N/A'} | INT8=${int8} GOPS | CPU=${cpuGflops} GFLOPS | Total=${totalScore} GFLOPS`);
+
+            if (socket.connected) registerNode();
+            return benchmarkResults;
+        }
+
+        function updateHardwareDisplay() {
+            const parts = [];
+            if (dgpuName) parts.push(`dGPU: ${dgpuName}`);
+            if (igpuName) parts.push(`iGPU: ${igpuName}`);
+            if (webglName) parts.push(`WebGL: ${webglName}`);
+            parts.push(`CPU: ${activeCpuWorkerCount}/${totalLogicalCores} Cores (${resourceTargetPercent}%)`);
+
+            document.getElementById('hardware-desc').innerText = parts.join(' | ');
+            const tag = document.getElementById('backend-tag');
+            if (dgpuName && igpuName) {
+                tag.innerText = 'WebGPU Dual-GPU Active';
+                tag.className = 'px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-400/30';
+            } else if (dgpuName) {
+                tag.innerText = 'WebGPU Active';
+                tag.className = 'px-2 py-0.5 text-[10px] font-bold rounded bg-cyan-500/20 text-cyan-400 border border-cyan-400/30';
+            } else {
+                tag.innerText = 'WebGL2 + CPU Active';
+                tag.className = 'px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-400 border border-amber-400/30';
+            }
+        }
+
+        function registerNode() {
+            if (!benchmarkDone) return;
+            const ua = navigator.userAgent;
+            let devName = '💻 Windows PC';
+            if (/Android/i.test(ua)) devName = '📱 Android Device';
+            else if (/iPhone|iPad/i.test(ua)) devName = '📱 Apple Device';
+            else if (/Macintosh/i.test(ua)) devName = '🍏 Mac Node';
+            else if (/Linux/i.test(ua)) devName = '🐧 Linux Machine';
+
+            socket.emit('register_node', {
+                name: devName,
+                cpu: `${totalLogicalCores} Logical Cores`,
+                gpu: [dgpuName, igpuName].filter(Boolean).join(' + ') || 'GPU',
+                dgpu: dgpuName,
+                igpu: igpuName,
+                gcu: benchmarkResults.total_gflops,
+                benchmarks: benchmarkResults,
+                resourceTarget: resourceTargetPercent,
+                backends: activeBackends,
+                concurrency: getConcurrency()
             });
         }
 
-        // ─── Socket events ───────────────────────────────────────────────────────
-
-        // Run benchmark first, then register on connect/reconnect
-        let benchmarkDone = false;
-        runWorkerBenchmark().then((gcu) => {
-            calculatedGCU = gcu;
-            benchmarkDone = true;
-            localLog(`📊 Benchmark complete: ${gcu} GCU (rows/sec)`);
-            if (socket.connected) {
-                registerNode();
-            }
+        // ─── Resource Slider Listener ─────────────────────────────────────────────
+        document.getElementById('resource-slider').addEventListener('input', (e) => {
+            resourceTargetPercent = parseInt(e.target.value, 10);
+            document.getElementById('resource-val').innerText = `${resourceTargetPercent}%`;
+            activeCpuWorkerCount = calculateCpuWorkerCount(resourceTargetPercent);
+            syncCpuWorkerPool(activeCpuWorkerCount);
+            updateHardwareDisplay();
+            localLog(`⚙️ System resource target adjusted to ${resourceTargetPercent}% (${activeCpuWorkerCount} CPU workers + GPU).`);
+            if (socket.connected && benchmarkDone) registerNode();
         });
 
-        // Register node on every (re)connection
+        document.getElementById('bench-btn').addEventListener('click', () => {
+            runFullBenchmark();
+        });
+
+        document.getElementById('bench-scale').addEventListener('change', (e) => {
+            const s = e.target.value;
+            const badge = document.getElementById('bench-scale-badge');
+            if (badge) badge.innerText = `Scale: ${s}x${s === '1' ? ' (Default)' : s === '16' ? ' (Peak)' : ''}`;
+            localLog(`⚙️ Benchmark scale set to ${s}x.`);
+        });
+
+        // ─── Socket Event Handlers ────────────────────────────────────────────────
         socket.on('connect', () => {
             reconnectBanner.classList.remove('show');
-            localLog(`🔌 Connected (${socket.id.substring(0, 8)}). ${benchmarkDone ? 'Registering...' : 'Waiting for benchmark...'}`);
-            if (benchmarkDone) {
-                registerNode();
-            }
+            localLog(`🔌 Connected to coordinator (${socket.id.substring(0, 8)}).`);
+            if (benchmarkDone) registerNode();
         });
 
         socket.on('disconnect', (reason) => {
             reconnectBanner.classList.add('show');
-            localLog(`⚠️ Disconnected: ${reason}. Attempting reconnect...`);
+            localLog(`⚠️ Disconnected: ${reason}. Auto-reconnecting...`);
         });
 
-        socket.on('connect_error', (err) => {
-            localLog(`❌ Connection error: ${err.message}`);
-        });
-
-        socket.on('reconnect', (attempt) => {
-            localLog(`✅ Reconnected after ${attempt} attempt(s).`);
+        socket.on('reconnect', () => {
             reconnectBanner.classList.remove('show');
-            // Re-enable wake lock after reconnect
+            localLog('✅ Reconnected successfully.');
             requestWakeLock();
+            if (benchmarkDone) registerNode();
         });
 
-        // Incoming task from server → pass to Web Worker
         socket.on('process_task', (task) => {
-            // BUG 9 FIX: Never disable noSleep. Keep video loop alive at all times.
-            // The web worker pool handles CPU-heavy computation on separate threads.
             taskQueue.push(task);
             processQueue();
         });
 
-        socket.on('start_crack_job', (data) => {
-            document.getElementById('hash-dashboard').classList.remove('hidden');
-            document.getElementById('hash-dashboard').classList.add('flex');
-            document.getElementById('hash-result').classList.add('hidden');
-            document.getElementById('hash-progress').style.width = '0%';
-            document.getElementById('hash-progress-text').innerText = '0% Search Space';
-            localLog(`🔑 Brute-force job started. Target Hash: ${data.targetHash}`);
-        });
-
-        socket.on('custom_task_update', (data) => {
-            if (data.jobId.startsWith('job_crack_')) {
-                const percent = Math.round((data.completedCount / data.totalCount) * 100);
-                document.getElementById('hash-progress').style.width = `${percent}%`;
-                document.getElementById('hash-progress-text').innerText = `${percent}% Search Space (${data.completedCount}/${data.totalCount} chunks)`;
-                
-                if (data.result && data.result.found) {
-                    document.getElementById('hash-result').classList.remove('hidden');
-                    document.getElementById('cracked-password').innerText = data.result.password;
-                    document.getElementById('cracked-node').innerText = data.nodeName;
-                    localLog(`🎉 Success! Password cracked by ${data.nodeName}: ${data.result.password} (Nonce: ${data.result.nonce})`);
-                }
-            }
-        });
-
-        // Queue is empty — node is idle, video loop keeps device awake
         socket.on('no_more_tasks', () => {
-            noSleep.enable().then(() => {
-                localLog('🎬 Queue empty — sleep-prevention loop active (node idle).');
-            }).catch(err => console.warn('NoSleep enable failed:', err));
+            localLog('🎬 Task queue empty. Workers in standby ready for incoming tasks.');
         });
 
-        // BUG 3 FIX: Ignore row_completed if it belongs to a stale render generation
-        let localRenderGeneration = 0;
         socket.on('reset_canvas', () => {
-            localRenderGeneration++;
-            taskQueue.length = 0; // Clear stale tasks in local queue
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            localLog(`🎨 Canvas reset (generation ${localRenderGeneration})`);
+            taskQueue.length = 0;
+            localLog('🔄 Task queue reset.');
         });
 
-        // ─── Camera state ────────────────────────────────────────────────────────────
-        let currentCamera = { theta: 0.5, phi: 0.3, dist: 2.5 };
-        let currentPower  = 8;
-
-        function updateViewportDisplay() {
-            document.getElementById('viewport-display').innerText =
-                `θ=${currentCamera.theta.toFixed(2)} φ=${currentCamera.phi.toFixed(2)} d=${currentCamera.dist.toFixed(2)} | Power: ${currentPower}`;
-        }
-
-        socket.on('camera_updated', ({ camera, power }) => {
-            currentCamera  = camera;
-            currentPower   = power || currentPower;
-            if (power !== undefined) document.getElementById('fractal-power').value = power;
-            updateViewportDisplay();
-            // Sync orbit vars
-            orbitTheta = camera.theta;
-            orbitPhi   = camera.phi;
-            orbitDist  = camera.dist;
+        socket.on('progress_update', (p) => {
+            const ratio = p.total > 0 ? p.completedTasks / p.total : 0;
+            const percent = Math.min(Math.round(ratio * 100), 100);
+            document.getElementById('task-progress').innerText = `${p.completedTasks} / ${p.total}`;
+            document.getElementById('progress-percent').innerText = `${percent}%`;
+            document.getElementById('progress-fill').style.width = `${percent}%`;
         });
 
-        socket.on('power_updated', (p) => {
-            currentPower = p;
-            updateViewportDisplay();
-            document.getElementById('fractal-power').value = p;
-        });
+        socket.on('log_event', (msg) => localLog(msg));
 
-        socket.on('quality_updated', (q) => {
-            document.getElementById('ray-quality').value = q;
-        });
-
-        document.getElementById('fractal-power').addEventListener('change', (e) => {
-            socket.emit('set_power', e.target.value);
-        });
-
-        document.getElementById('ray-quality').addEventListener('change', (e) => {
-            socket.emit('set_quality', e.target.value);
-        });
-
-        // ─── Orbit camera controls ────────────────────────────────────────────────
-        let isDragging = false, dragStartX = 0, dragStartY = 0;
-        let orbitTheta = 0.5, orbitPhi = 0.3, orbitDist = 2.5;
-
-        canvas.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            canvas.parentElement.style.cursor = 'grabbing';
-            e.preventDefault();
-        });
-
-        window.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                canvas.parentElement.style.cursor = 'grab';
-            }
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            const dx = e.clientX - dragStartX;
-            const dy = e.clientY - dragStartY;
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-
-            orbitTheta += dx * 0.008;
-            orbitPhi    = Math.max(-1.4, Math.min(1.4, orbitPhi - dy * 0.008));
-
-            socket.emit('set_camera', { theta: orbitTheta, phi: orbitPhi, dist: orbitDist });
-        });
-
-        canvas.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            orbitDist = Math.max(1.2, Math.min(8.0, orbitDist + e.deltaY * 0.003));
-            socket.emit('set_camera', { theta: orbitTheta, phi: orbitPhi, dist: orbitDist });
-        }, { passive: false });
-
-        // ─── row_completed — paint raw RGBA chunk ─────────────────────────────────────
-        socket.on('row_completed', (data) => {
-            drawChunk(data.yStart, data.chunkHeight, data.pixels);
-        });
-
-        // ─── Chunk rendering (RGBA Uint8Array) ───────────────────────────────────
-        // Both GPU and CPU workers output pre-coloured RGBA — paint directly.
-        function drawChunk(yStart, chunkHeight, pixels) {
-            if (!pixels || pixels.length === 0) return;
-            const imgData = ctx.createImageData(canvas.width, chunkHeight);
-            const dst     = imgData.data;
-            // pixels is a plain Array from JSON — copy into Uint8ClampedArray
-            for (let i = 0; i < dst.length; i++) dst[i] = pixels[i];
-            ctx.putImageData(imgData, 0, yStart);
-        }
-
-
-        // ─── Dashboard update ─────────────────────────────────────────────────────
+        // ─── Live Dashboard Nodes Rendering ───────────────────────────────────────
         socket.on('update_dashboard', (nodes) => {
             const container = document.getElementById('nodes-container');
             container.innerHTML = '';
-            let totalGcu = 0;
+            let totalGflops = 0;
 
             if (nodes.length === 0) {
                 container.innerHTML = `
                     <div class="col-span-2 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 p-8 text-center text-slate-500">
-                        No active computing nodes found. Open this page in another browser tab or on a mobile device!
+                        No active computing nodes found. Open this page in another browser tab or on another device to scale the grid!
                     </div>
                 `;
             }
 
             nodes.forEach(node => {
-                totalGcu += node.gcu;
-                const statusColor = node.status === 'Computing'
+                const nodeScore = node.benchmarks ? node.benchmarks.total_gflops : (node.gcu || 0);
+                totalGflops += nodeScore;
+
+                const statusColor = node.status === 'Computing' || node.status === 'Inferring'
                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-400/30'
-                    : node.status === 'Idle'
-                    ? 'bg-amber-500/20 text-amber-400 border-amber-400/30'
                     : 'bg-blue-500/20 text-blue-400 border-blue-400/30';
 
-                const dotPing = node.status === 'Computing'
-                    ? '<span class="flex h-2.5 w-2.5 relative"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span></span>'
-                    : '';
-
                 let icon = '💻';
-                if (node.name.includes('Android') || node.name.includes('iOS')) icon = '📱';
-                if (node.name.includes('Linux') || node.name.includes('Mac')) icon = '🖥️';
+                if (node.name.includes('Android') || node.name.includes('Apple')) icon = '📱';
+                if (node.name.includes('Linux')) icon = '🐧';
+
+                const fp32Tag = node.benchmarks?.fp32_gflops ? `${node.benchmarks.fp32_gflops} GFLOPS (FP32)` : '';
+                const fp16Tag = node.benchmarks?.fp16_supported ? `${node.benchmarks.fp16_gflops} (FP16)` : '';
 
                 container.innerHTML += `
-                    <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10 hover:border-white/15 hover:-translate-y-0.5 transition-all duration-300 shadow-md">
-                        <div class="flex justify-between items-start mb-4">
+                    <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10 hover:border-white/15 transition-all shadow-md">
+                        <div class="flex justify-between items-start mb-3">
                             <div class="flex items-center gap-3">
                                 <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl">${icon}</div>
                                 <div>
-                                    <h3 class="font-bold text-sm tracking-tight">${node.name}</h3>
-                                    <p class="text-[10px] text-slate-500 font-mono mt-0.5">${node.id.substring(0, 8)}</p>
+                                    <h3 class="font-bold text-sm tracking-tight text-slate-200">${node.name}</h3>
+                                    <p class="text-[10px] text-slate-500 font-mono">${node.id.substring(0, 8)} &bull; ${node.concurrency || 1} workers (~${node.resourceTarget || 90}%)</p>
                                 </div>
                             </div>
                             <span class="px-2.5 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1.5 uppercase ${statusColor}">
-                                ${dotPing} ${node.status}
+                                ${node.status}
                             </span>
                         </div>
-                        <div class="space-y-2 pt-2 border-t border-white/5">
-                            <div class="flex justify-between text-xs">
-                                <span class="text-slate-400">CPU:</span>
-                                <span class="font-bold text-slate-300 truncate max-w-[160px]" title="${node.cpu}">${node.cpu}</span>
+                        <div class="space-y-1.5 pt-2 border-t border-white/5 text-xs">
+                            <div class="flex justify-between text-slate-400">
+                                <span>Hardware:</span>
+                                <span class="font-bold text-slate-300 truncate max-w-[200px]" title="${node.gpu}">${node.gpu}</span>
                             </div>
-                            <div class="flex justify-between text-xs">
-                                <span class="text-slate-400">GPU:</span>
-                                <span class="font-bold text-slate-300 text-right max-w-[160px]" title="${node.gpu || 'Unknown GPU'}">${(node.gpu || 'Unknown GPU').split(' | ').join('<br>')}</span>
+                            <div class="flex justify-between text-slate-400">
+                                <span>GFLOPS Power:</span>
+                                <span class="font-black text-emerald-400 font-outfit">${nodeScore.toFixed(1)} GFLOPS</span>
                             </div>
-                            <div class="flex justify-between text-xs">
-                                <span class="text-slate-400">GCU Rating:</span>
-                                <span class="font-bold text-emerald-400">${node.gcu} GCUs</span>
-                            </div>
-                            <div class="flex justify-between text-xs">
-                                <span class="text-slate-400">Rows Solved:</span>
+                            <div class="flex justify-between text-slate-400">
+                                <span>Tasks Solved:</span>
                                 <span class="font-bold text-blue-400">${node.completed}</span>
                             </div>
                         </div>
@@ -784,28 +991,15 @@
                 `;
             });
 
-            document.getElementById('total-gcu').innerText = totalGcu.toFixed(1) + ' GCUs';
+            document.getElementById('total-gcu').innerText = totalGflops.toFixed(1) + ' GFLOPS';
             document.getElementById('device-count').innerText = nodes.length;
         });
 
-        // ─── Progress update ──────────────────────────────────────────────────────
-        socket.on('progress_update', (progress) => {
-            const ratio = progress.completedTasks / progress.total;
-            const percent = Math.min(Math.round(ratio * 100), 100);
-            document.getElementById('task-progress').innerText = `${progress.completedTasks} / ${progress.total}`;
-            document.getElementById('progress-percent').innerText = `${percent}%`;
-            document.getElementById('progress-fill').style.width = `${percent}%`;
-        });
-
-        socket.on('log_event', (msg) => {
-            localLog(msg);
-        });
-
-        // ─── Control Events ───────────────────────────────────────────────────────
-
-        document.getElementById('inject-btn').addEventListener('click', () => {
-            socket.emit('inject_tasks');
-        });
+        // ─── Startup Initialization ──────────────────────────────────────────────
+        (async function init() {
+            await initComputeWorkers();
+            await runFullBenchmark();
+        })();
     </script>
 </body>
 

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridCompute Demo Client | Task Push & Distributed Computing</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        outfit: ['Outfit', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #070a13;
+            background-image:
+                radial-gradient(at 0% 0%, hsla(260, 84%, 15%, 0.2) 0, transparent 50%),
+                radial-gradient(at 100% 0%, hsla(180, 84%, 15%, 0.2) 0, transparent 50%),
+                radial-gradient(at 50% 100%, hsla(220, 84%, 15%, 0.15) 0, transparent 50%);
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+    </style>
+</head>
+
+<body class="text-slate-100 font-sans min-h-screen flex flex-col p-4 md:p-8">
+
+    <div class="max-w-6xl w-full mx-auto flex-1 flex flex-col">
+        <!-- Header -->
+        <header class="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-xl">
+            <div>
+                <div class="flex items-center gap-3">
+                    <span class="flex h-3.5 w-3.5 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-purple-500"></span>
+                    </span>
+                    <h1 class="text-2xl md:text-3xl font-black font-outfit bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
+                        GridCompute Client Demo
+                    </h1>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">Standalone Task Consumer pushing heavy workloads to the compute grid via REST API</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="/" target="_blank" class="px-4 py-2 bg-white/10 hover:bg-white/15 active:scale-95 transition-all text-xs font-bold rounded-xl border border-white/10 flex items-center gap-1.5">
+                    🌐 Open Grid Worker Node
+                </a>
+            </div>
+        </header>
+
+        <!-- Live Grid Telemetry Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10">
+                <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Active Grid Nodes</p>
+                <p id="grid-nodes-count" class="text-3xl font-black text-cyan-400 font-outfit mt-1">--</p>
+                <span class="text-[10px] text-slate-500">Connected devices</span>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10">
+                <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Compute Power</p>
+                <p id="grid-total-gflops" class="text-3xl font-black text-emerald-400 font-outfit mt-1">-- GFLOPS</p>
+                <span class="text-[10px] text-slate-500">Collective cluster capacity</span>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10">
+                <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">FP16 / INT8 AI Power</p>
+                <p id="grid-fp16-int8" class="text-3xl font-black text-purple-400 font-outfit mt-1">--</p>
+                <span class="text-[10px] text-slate-500">shader-f16 + quantized</span>
+            </div>
+            <div class="bg-white/5 backdrop-blur-md p-5 rounded-2xl border border-white/10">
+                <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Queue Status</p>
+                <p id="grid-queue-depth" class="text-3xl font-black text-amber-400 font-outfit mt-1">0</p>
+                <span class="text-[10px] text-slate-500">In-flight chunk tasks</span>
+            </div>
+        </div>
+
+        <!-- Task Dispatch Panel -->
+        <div class="bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-xl mb-8">
+            <h2 class="text-lg font-bold font-outfit text-slate-200 mb-4 flex items-center gap-2">
+                <span>⚡</span> Select & Push Workload to GridCompute API
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <!-- Option 1: Distributed Matrix Multiplication -->
+                <div id="card-gemm" onclick="selectWorkload('gemm')" class="cursor-pointer p-4 rounded-xl border border-purple-500/50 bg-purple-500/10 hover:border-purple-400 transition-all flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-purple-400 uppercase">GPU / CPU Workload</span>
+                            <span class="text-xs">📐</span>
+                        </div>
+                        <h3 class="font-bold text-sm text-slate-200">Distributed Matrix Multiply (GEMM)</h3>
+                        <p class="text-xs text-slate-400 mt-1">Multiplies large matrices (e.g. 512x512 = ~268M operations) split into tiled row chunks distributed to grid workers.</p>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-white/5 flex justify-between text-xs text-slate-400">
+                        <span>Target: dGPU/iGPU/CPU</span>
+                        <span class="text-purple-400 font-bold">Recommended</span>
+                    </div>
+                </div>
+
+                <!-- Option 2: Distributed Monte Carlo Simulation -->
+                <div id="card-monte" onclick="selectWorkload('monte_carlo')" class="cursor-pointer p-4 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-all flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-cyan-400 uppercase">Stochastic Simulation</span>
+                            <span class="text-xs">🎯</span>
+                        </div>
+                        <h3 class="font-bold text-sm text-slate-200">Distributed Monte Carlo Pi Estimation</h3>
+                        <p class="text-xs text-slate-400 mt-1">Generates 10,000,000 random stochastic coordinate vectors across nodes to estimate π with high precision.</p>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-white/5 flex justify-between text-xs text-slate-400">
+                        <span>10M Samples</span>
+                        <span class="text-cyan-400 font-bold">20 Chunks</span>
+                    </div>
+                </div>
+
+                <!-- Option 3: Custom Parallel Computing Kernel -->
+                <div id="card-custom" onclick="selectWorkload('custom')" class="cursor-pointer p-4 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-all flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-amber-400 uppercase">Custom JS / Wasm</span>
+                            <span class="text-xs">🧬</span>
+                        </div>
+                        <h3 class="font-bold text-sm text-slate-200">Distributed High-Density Prime Factorization</h3>
+                        <p class="text-xs text-slate-400 mt-1">Searches large integer ranges for prime number distributions and factorizes complex numbers concurrently.</p>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-white/5 flex justify-between text-xs text-slate-400">
+                        <span>CPU / Wasm</span>
+                        <span class="text-amber-400 font-bold">50 Chunks</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameters & Submit Action -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-white/10">
+                <div id="workload-params" class="text-xs text-slate-400 flex items-center gap-3">
+                    <span>Matrix Size: <strong class="text-slate-200">512 x 512</strong></span>
+                    <span>&bull;</span>
+                    <span>Tile Chunks: <strong class="text-slate-200">16 chunks (32 rows each)</strong></span>
+                    <span>&bull;</span>
+                    <span>Redundancy: <strong class="text-slate-200">N=1</strong></span>
+                </div>
+                <button id="submit-btn" onclick="submitCurrentJob()" class="px-6 py-3 bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 active:scale-95 transition-all text-sm font-bold rounded-xl shadow-lg shadow-purple-500/25 flex items-center gap-2">
+                    <span>🚀</span> Push Job to Grid API
+                </button>
+            </div>
+        </div>
+
+        <!-- Real-Time Execution Status & Output -->
+        <div id="execution-panel" class="hidden bg-white/5 backdrop-blur-md p-6 rounded-2xl border border-white/10 shadow-xl mb-8 flex-col gap-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h3 class="text-base font-bold font-outfit text-slate-200 flex items-center gap-2">
+                        <span id="job-spinner" class="animate-spin text-purple-400">🌀</span>
+                        <span id="job-title">Executing Distributed Job...</span>
+                    </h3>
+                    <p id="job-meta" class="text-xs text-slate-400 font-mono mt-0.5">Job ID: --</p>
+                </div>
+                <span id="job-status-badge" class="px-3 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-400/30">
+                    QUEUED
+                </span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div>
+                <div class="flex justify-between text-xs font-semibold mb-1.5">
+                    <span class="text-slate-300">Chunk Computation Progress</span>
+                    <span id="job-percent" class="text-purple-400">0%</span>
+                </div>
+                <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/5">
+                    <div id="job-progress-fill" class="bg-gradient-to-r from-purple-500 to-cyan-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Chunk Map Grid -->
+            <div class="mt-2">
+                <p class="text-xs text-slate-400 font-semibold mb-2">Distributed Chunks Map:</p>
+                <div id="chunk-grid" class="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto custom-scrollbar p-2 bg-black/40 rounded-xl border border-white/5">
+                    <!-- Dynamic Chunk Blocks -->
+                </div>
+            </div>
+
+            <!-- Completed Result Display -->
+            <div id="result-box" class="hidden mt-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-400/30 text-xs">
+                <h4 class="text-emerald-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                    <span>🎉</span> Computation Successfully Verified & Completed!
+                </h4>
+                <div id="result-metrics" class="space-y-1 font-mono text-slate-300 mt-2">
+                    <!-- Metrics injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Logger -->
+        <div class="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-4 font-mono text-xs text-slate-400 flex flex-col gap-2">
+            <h4 class="text-slate-300 font-bold font-outfit uppercase tracking-wider text-[11px]">API Interaction Log</h4>
+            <div id="demo-log" class="max-h-48 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+                <div class="text-slate-500">[Ready] Connect to coordinator and select a workload to begin.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let selectedType = 'gemm';
+        let currentJobId = null;
+        let pollInterval = null;
+
+        function demoLog(msg) {
+            const time = new Date().toLocaleTimeString();
+            const el = document.createElement('div');
+            el.innerHTML = `<span class="text-slate-600">[${time}]</span> ${msg}`;
+            const logBox = document.getElementById('demo-log');
+            logBox.appendChild(el);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        // ─── Poll Cluster Telemetry ──────────────────────────────────────────────
+        async function fetchGridStats() {
+            try {
+                const res = await fetch('/api/v1/grid/stats');
+                if (!res.ok) return;
+                const stats = await res.json();
+                document.getElementById('grid-nodes-count').innerText = stats.onlineNodes;
+                document.getElementById('grid-total-gflops').innerText = `${stats.totalGflops} GFLOPS`;
+                document.getElementById('grid-fp16-int8').innerText = `${stats.totalFP16Gflops} / ${stats.totalINT8Gops}`;
+                document.getElementById('grid-queue-depth').innerText = stats.queuedTasks;
+            } catch (_) {}
+        }
+        fetchGridStats();
+        setInterval(fetchGridStats, 3000);
+
+        // ─── Workload Selection ──────────────────────────────────────────────────
+        function selectWorkload(type) {
+            selectedType = type;
+            const cardGemm = document.getElementById('card-gemm');
+            const cardMonte = document.getElementById('card-monte');
+            const cardCustom = document.getElementById('card-custom');
+
+            [cardGemm, cardMonte, cardCustom].forEach(c => {
+                c.className = 'cursor-pointer p-4 rounded-xl border border-white/10 bg-white/5 hover:border-white/20 transition-all flex flex-col justify-between';
+            });
+
+            const paramsEl = document.getElementById('workload-params');
+
+            if (type === 'gemm') {
+                cardGemm.className = 'cursor-pointer p-4 rounded-xl border border-purple-500/50 bg-purple-500/10 hover:border-purple-400 transition-all flex flex-col justify-between';
+                paramsEl.innerHTML = '<span>Matrix: <strong class="text-slate-200">512 x 512</strong></span><span>&bull;</span><span>Tile Size: <strong class="text-slate-200">32 rows (16 chunks)</strong></span><span>&bull;</span><span>Ops: <strong class="text-purple-400">~268.4M FLOPs</strong></span>';
+            } else if (type === 'monte_carlo') {
+                cardMonte.className = 'cursor-pointer p-4 rounded-xl border border-cyan-500/50 bg-cyan-500/10 hover:border-cyan-400 transition-all flex flex-col justify-between';
+                paramsEl.innerHTML = '<span>Samples: <strong class="text-slate-200">10,000,000</strong></span><span>&bull;</span><span>Chunks: <strong class="text-slate-200">20 chunks (500k each)</strong></span><span>&bull;</span><span>Method: <strong class="text-cyan-400">Stochastic Vector Sampling</strong></span>';
+            } else {
+                cardCustom.className = 'cursor-pointer p-4 rounded-xl border border-amber-500/50 bg-amber-500/10 hover:border-amber-400 transition-all flex flex-col justify-between';
+                paramsEl.innerHTML = '<span>Search Space: <strong class="text-slate-200">1,000,000 to 5,000,000</strong></span><span>&bull;</span><span>Chunks: <strong class="text-slate-200">40 chunks</strong></span><span>&bull;</span><span>Task: <strong class="text-amber-400">Prime Factorization</strong></span>';
+            }
+        }
+
+        // ─── Submit Job to REST API ──────────────────────────────────────────────
+        async function submitCurrentJob() {
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+
+            document.getElementById('execution-panel').classList.remove('hidden');
+            document.getElementById('execution-panel').classList.add('flex');
+            document.getElementById('result-box').classList.add('hidden');
+            document.getElementById('job-spinner').classList.remove('hidden');
+
+            const chunkGrid = document.getElementById('chunk-grid');
+            chunkGrid.innerHTML = '';
+
+            let payload = {};
+
+            if (selectedType === 'gemm') {
+                const M = 512, K = 512, N = 512;
+                demoLog(`📦 Generating test matrices A (${M}x${K}) and B (${K}x${N})...`);
+                const matrixA = new Array(M * K);
+                const matrixB = new Array(K * N);
+                for (let i = 0; i < matrixA.length; i++) matrixA[i] = (i % 10) * 0.1;
+                for (let i = 0; i < matrixB.length; i++) matrixB[i] = (i % 7) * 0.1;
+
+                payload = {
+                    type: 'gemm',
+                    matrixA,
+                    matrixB,
+                    M, K, N,
+                    tileRows: 32
+                };
+                demoLog(`🚀 Pushing GEMM Job to POST /api/v1/jobs (${M / 32} tile chunks)...`);
+            } else if (selectedType === 'monte_carlo') {
+                payload = {
+                    type: 'monte_carlo',
+                    totalSamples: 10000000,
+                    chunkSize: 500000
+                };
+                demoLog('🚀 Pushing Monte Carlo Pi job (10,000,000 samples across 20 chunks)...');
+            } else {
+                // Prime search tasks
+                const tasks = [];
+                const chunkSize = 100000;
+                for (let i = 0; i < 40; i++) {
+                    tasks.push({
+                        taskId: `prime_chunk_${i}`,
+                        params: { start: 1000000 + i * chunkSize, count: chunkSize }
+                    });
+                }
+                const script = `
+                    const { start, count } = params;
+                    function isPrime(n) {
+                        if (n <= 1) return false;
+                        if (n <= 3) return true;
+                        if (n % 2 === 0 || n % 3 === 0) return false;
+                        for (let i = 5; i * i <= n; i += 6) {
+                            if (n % i === 0 || n % (i + 2) === 0) return false;
+                        }
+                        return true;
+                    }
+                    let primesFound = 0;
+                    for (let n = start; n < start + count; n++) {
+                        if (isPrime(n)) primesFound++;
+                    }
+                    return { primesFound, start, count };
+                `;
+                payload = { type: 'custom', script, tasks };
+                demoLog('🚀 Pushing Distributed Prime Search job (40 chunks)...');
+            }
+
+            try {
+                const res = await fetch('/api/v1/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const text = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    throw new Error(`Server returned non-JSON response (${res.status}): ${text.substring(0, 150)}`);
+                }
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}: Failed to submit job`);
+
+                currentJobId = data.jobId;
+                document.getElementById('job-title').innerText = `Executing ${data.type.toUpperCase()} Job`;
+                document.getElementById('job-meta').innerText = `Job ID: ${currentJobId} &bull; Total Tasks: ${data.totalTasks}`;
+                document.getElementById('job-status-badge').innerText = 'COMPUTING';
+                document.getElementById('job-status-badge').className = 'px-3 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-400/30';
+
+                // Populate chunk blocks
+                for (let i = 0; i < data.totalTasks; i++) {
+                    const block = document.createElement('div');
+                    block.id = `chunk-${i}`;
+                    block.className = 'w-6 h-6 rounded-md bg-slate-800 border border-white/10 flex items-center justify-center text-[10px] font-mono text-slate-500 transition-colors';
+                    block.innerText = i;
+                    chunkGrid.appendChild(block);
+                }
+
+                demoLog(`✅ Job ${currentJobId} accepted by cluster coordinator (${data.totalTasks} chunks queued).`);
+                startPolling(currentJobId);
+            } catch (err) {
+                demoLog(`❌ Submission error: ${err.message}`);
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
+        }
+
+        // ─── Poll Job Status until Completion ────────────────────────────────────
+        function startPolling(jobId) {
+            if (pollInterval) clearInterval(pollInterval);
+
+            pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/job-status/${jobId}`);
+                    if (!res.ok) return;
+                    const job = await res.json();
+
+                    const percent = job.progress.percent;
+                    document.getElementById('job-percent').innerText = `${percent}%`;
+                    document.getElementById('job-progress-fill').style.width = `${percent}%`;
+
+                    // Highlight completed chunks
+                    const chunkGrid = document.getElementById('chunk-grid');
+                    for (let i = 0; i < job.progress.completed; i++) {
+                        const block = document.getElementById(`chunk-${i}`);
+                        if (block && !block.classList.contains('bg-emerald-500')) {
+                            block.className = 'w-6 h-6 rounded-md bg-emerald-500 text-slate-950 font-bold border border-emerald-400 flex items-center justify-center text-[10px] font-mono';
+                        }
+                    }
+
+                    if (job.status === 'completed') {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                        handleJobComplete(job);
+                    }
+                } catch (e) {
+                    console.warn('Poll error:', e);
+                }
+            }, 600);
+        }
+
+        function handleJobComplete(job) {
+            document.getElementById('job-spinner').classList.add('hidden');
+            document.getElementById('job-status-badge').innerText = 'COMPLETED';
+            document.getElementById('job-status-badge').className = 'px-3 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-400 border border-purple-400/30';
+
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = false;
+            btn.classList.remove('opacity-50');
+
+            const resultBox = document.getElementById('result-box');
+            const metricsBox = document.getElementById('result-metrics');
+            resultBox.classList.remove('hidden');
+
+            const durationSec = ((new Date(job.completedAt) - new Date(job.createdAt)) / 1000).toFixed(2);
+
+            let details = `<div>Duration: <strong class="text-emerald-400">${durationSec} seconds</strong></div>`;
+            details += `<div>Completed Chunks: <strong class="text-slate-200">${job.progress.completed} / ${job.progress.total}</strong></div>`;
+
+            if (job.type === 'gemm' && job.assembledResult) {
+                const totalOps = 2 * job.assembledResult.M * job.assembledResult.K * job.assembledResult.N;
+                const achievedGflops = ((totalOps / Math.max(0.01, durationSec)) / 1e9).toFixed(2);
+                details += `<div>Total Operations: <strong class="text-purple-400">${(totalOps / 1e6).toFixed(1)} Million FLOPs</strong></div>`;
+                details += `<div>Effective Cluster Rate: <strong class="text-cyan-400 text-sm">${achievedGflops} GFLOPS</strong></div>`;
+                details += `<div>Matrix C Sample: <strong class="text-slate-400">[C[0]=${job.assembledResult.matrixC[0]?.toFixed(3)}, C[1]=${job.assembledResult.matrixC[1]?.toFixed(3)}...]</strong></div>`;
+            } else if (job.type === 'monte_carlo' && job.assembledResult) {
+                details += `<div>Total Hits: <strong class="text-slate-200">${job.assembledResult.totalHits.toLocaleString()} / ${job.assembledResult.totalSamples.toLocaleString()}</strong></div>`;
+                details += `<div>Estimated π: <strong class="text-cyan-400 text-sm">${job.assembledResult.estimatedPi.toFixed(7)}</strong> (Math.PI diff: ${Math.abs(Math.PI - job.assembledResult.estimatedPi).toFixed(7)})</div>`;
+            }
+
+            metricsBox.innerHTML = details;
+            demoLog(`🎉 Job ${job.jobId} fully resolved in ${durationSec}s! All results assembled.`);
+        }
+
+        // Listen for live socket broadcasts
+        socket.on('gemm_tile_completed', (data) => {
+            if (data.jobId === currentJobId) {
+                demoLog(`🧩 Chunk ${data.taskId} completed by ${data.nodeName} [Backend: ${data.backend}]`);
+            }
+        });
+
+        socket.on('job_completed', (data) => {
+            if (data.jobId === currentJobId && pollInterval) {
+                clearInterval(pollInterval);
+                fetch(`/api/job-status/${data.jobId}`).then(r => r.json()).then(handleJobComplete);
+            }
+        });
+    </script>
+</body>
+
+</html>

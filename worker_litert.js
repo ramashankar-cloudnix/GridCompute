@@ -1,4 +1,4 @@
-// GridTorrent LiteRT.js Web Worker — Distributed ML Inference
+// GridCompute LiteRT.js Web Worker — Distributed ML Inference
 // Runs .tflite model inference using LiteRT.js (WebGPU accelerated, XNNPACK CPU fallback).
 // Integrates with the existing GridCompute socket protocol via 'process_task' / 'task_completed'.
 //

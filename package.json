@@ -1,7 +1,7 @@
 {
-  "name": "gridtorrent",
-  "version": "1.1.0",
-  "description": "Distributed P2P compute grid — Mandelbulb 3D rendering + LiteRT.js ML inference workloads",
+  "name": "gridcompute",
+  "version": "1.2.0",
+  "description": "High-throughput distributed browser compute grid — collective dGPU/iGPU, 2026 GFLOPS benchmarks, GEMM matrices & LiteRT.js ML inference",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,9 +10,28 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ramashankar-cloudnix/GridCompute.git"
+  },
+  "keywords": [
+    "distributed-computing",
+    "webgpu",
+    "webgl2",
+    "web-workers",
+    "gflops",
+    "benchmark",
+    "gemm",
+    "litert",
+    "tensorflow-lite",
+    "grid-computing",
+    "socket-io"
+  ],
+  "author": "ramashankar-cloudnix",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "express": "^5.2.1",
-    "socket.io": "^4.8.3",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.8.3"
   }
 }

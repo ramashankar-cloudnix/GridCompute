@@ -10,36 +10,47 @@ Originally built for 3D Mandelbulb fractal rendering, the grid now supports **ge
 
 | Capability | Detail |
 |---|---|
+| **~90% System Resource Saturation** | Dynamically scales worker pool to ~90% of host capacity with configurable target slider (20%–100%) |
+| **Collective dGPU + iGPU Computing** | WebGPU dual-adapter initialization harnesses discrete and integrated GPUs simultaneously |
+| **Legacy 5–7yr Hardware Fallback** | Universal WebGL2 GPGPU + multi-core CPU workers run reliably on 2019+ devices |
+| **2026 GFLOPS Benchmark Engine** | Tests FP32, FP16 (`shader-f16`), and INT8 quantized GOPS for edge AI workloads |
+| **Background Tab Persistence** | Screen Wake Lock + silent Web Audio loop + Web Locks lease keep workers active even when minimized |
+| **Unified Task Push REST API** | Push distributed GEMM, Monte Carlo, ML inference, and custom kernels via `/api/v1/jobs` |
+| **Standalone Demo Client App** | Interactive demo web app (`/demo`) and CLI client (`demo_cli.js`) to submit and monitor tasks |
 | **3D Mandelbulb rendering** | Distributed raymarching across all connected nodes |
-| **WebGL2 GPU workers** | Each node renders via GLSL fragment shaders on its own GPU |
-| **CPU fallback workers** | JavaScript sphere-tracer for devices without WebGL2 |
 | **LiteRT.js ML inference** | Run `.tflite` models (WebGPU → XNNPACK CPU fallback) across the grid |
-| **Custom JS jobs** | Submit arbitrary async JavaScript to be executed on worker nodes |
-| **SHA-256 brute-force** | Built-in distributed hash cracker demo |
 | **Redundancy & consensus** | Tasks can be replicated across N nodes; majority-vote resolves conflicts |
 | **Fault tolerance** | Disconnected nodes have in-flight tasks automatically re-queued |
-| **Real-time dashboard** | Live node status, progress, and event log via Socket.IO |
 
 ---
 
 ## Architecture
 
 ```
-Browser Nodes (workers)          Node.js Server (coordinator)
-┌─────────────────────┐          ┌──────────────────────────────┐
-│  worker_gpu.js      │◄────────►│  Socket.IO task dispatcher   │
-│  (WebGL2 GLSL)      │          │                              │
-├─────────────────────┤          │  Task queue (heavyTaskQueue) │
-│  worker.js          │◄────────►│  ├─ mandelbulb chunks        │
-│  (CPU JavaScript)   │          │  ├─ litert inference tasks   │
-├─────────────────────┤          │  └─ custom JS tasks          │
-│  worker_litert.js   │◄────────►│                              │
-│  (LiteRT.js WebGPU) │          │  REST API                    │
-└─────────────────────┘          │  ├─ /api/models/*            │
-         ▲                       │  ├─ /api/submit-litert-job   │
-         │ opens URL             │  ├─ /api/submit-job          │
-   Any browser/device            │  └─ /api/crack               │
-                                 └──────────────────────────────┘
+Browser Nodes (workers)                 Node.js Server (coordinator)
+┌─────────────────────────────────┐     ┌─────────────────────────────────────────┐
+│ worker_webgpu.js (dGPU / iGPU)  │◄───►│  Socket.IO task dispatcher              │
+├─────────────────────────────────┤     │  ├─ Double-buffered prefetch queue      │
+│ worker_gpu.js (WebGL2 fallback) │◄───►│  └─ GFLOPS-weighted load balancing      │
+├─────────────────────────────────┤     │                                         │
+│ worker.js (Multi-core CPU)      │◄───►│  Task Queue                             │
+├─────────────────────────────────┤     │  ├─ GEMM matrix multiplication tiles    │
+│ worker_litert.js (ML inference) │◄───►│  ├─ Monte Carlo simulation chunks       │
+└─────────────────────────────────┘     │  ├─ Mandelbulb render chunks            │
+                 ▲                      │  └─ Custom JS / Wasm kernels            │
+                 │                      │                                         │
+        Background Engine               │  Unified REST API (v1)                  │
+        ├─ Screen Wake Lock             │  ├─ POST /api/v1/jobs                   │
+        ├─ Silent Web Audio             │  ├─ GET  /api/v1/jobs/:jobId            │
+        └─ Web Locks Lease              │  ├─ GET  /api/v1/jobs/:jobId/results    │
+                                        │  ├─ GET  /api/v1/grid/stats             │
+                                        │  └─ GET  /api/v1/grid/nodes             │
+                                        └─────────────────────────────────────────┘
+                                                             ▲
+                                                             │ REST / Socket.IO
+                                                ┌────────────────────────────┐
+                                                │ Demo App (/demo) & CLI SDK │
+                                                └────────────────────────────┘
 ```
 
 The server never computes — it only routes tasks and aggregates results.
@@ -56,7 +67,7 @@ The server never computes — it only routes tasks and aggregates results.
 ### Install & Run
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ramashankar-cloudnix/GridCompute.git
 cd GridCompute
 npm install
 npm start
@@ -214,46 +225,48 @@ Each completed task result contains:
 
 | Event | Payload | Description |
 |---|---|---|
-| `process_task` | Task object | Assigned task for the node to execute |
-| `no_more_tasks` | — | Queue is empty |
-| `row_completed` | `{ yStart, chunkHeight, pixels }` | Mandelbulb chunk rendered |
+| `process_task` | Task object | Assigned computing task for the node (GEMM, Monte Carlo, Custom JS, LiteRT) |
+| `no_more_tasks` | — | Task queue is empty (workers idle/standby) |
 | `custom_task_update` | `{ jobId, taskId, result, error }` | Consensus result for a custom/litert task |
-| `progress_update` | `{ completedTasks, total }` | Overall progress |
-| `update_dashboard` | Node list | Node status for UI dashboard |
+| `gemm_tile_completed` | `{ jobId, taskId, completedCount, totalCount }` | Real-time GEMM tile resolution event |
+| `progress_update` | `{ completedTasks, total }` | Overall cluster job progress |
+| `update_dashboard` | Node list | Live node telemetry, hardware specs & GFLOPS rating |
 | `log_event` | `string` | Human-readable activity log entry |
-| `camera_updated` | `{ camera, power }` | Fractal camera state sync |
 
 ### Client → Server
 
 | Event | Payload | Description |
 |---|---|---|
-| `register_node` | `{ name, cpu, gpu, gcu, concurrency, litert }` | Join the grid |
-| `task_completed` | `{ jobId, taskId, result, pixels?, error? }` | Report task result |
-| `set_camera` | `{ theta, phi, dist }` | Orbit Mandelbulb camera |
-| `set_power` | `number` | Change Mandelbulb exponent (4/6/8/12/16) |
-| `set_quality` | `number` | Change ray-march step budget (40–200) |
-| `inject_tasks` | — | Reset to default Mandelbulb view |
+| `register_node` | `{ name, cpu, gpu, dgpu, igpu, gcu, benchmarks, resourceTarget, backends, concurrency }` | Join the grid with full hardware profile |
+| `task_completed` | `{ jobId, taskId, backend, result, error? }` | Report finished chunk/tile result |
 
 ---
 
 ## Node Registration Profile
 
-When a browser node connects it sends `register_node` with:
+When a browser node connects and completes its benchmark, it sends `register_node` with:
 
 ```js
 {
-  name:        "My Device",      // display name (max 32 chars)
-  cpu:         "Apple M3",       // CPU string (max 64 chars)
-  gpu:         "Apple GPU",      // GPU string (max 256 chars)
-  gcu:         1500,             // Grid Compute Units (arbitrary perf score)
-  concurrency: 2,                // max simultaneous tasks (1–32)
-  litert:      true              // declare LiteRT.js inference support
+  name:           "💻 Windows PC",      // display name
+  cpu:            "16 Logical Cores",   // CPU core count
+  gpu:            "NVIDIA GeForce RTX", // GPU string
+  dgpu:           "NVIDIA GeForce RTX", // Discrete GPU (if present)
+  igpu:           "Intel UHD Graphics", // Integrated GPU (if present)
+  gcu:            4250.5,               // Total cluster GFLOPS score
+  benchmarks: {                         // Comprehensive 2026 GFLOPS rating
+    fp32_gflops:    2100.2,
+    fp16_gflops:    1850.0,
+    fp16_supported: true,
+    int8_gops:      2900.5,
+    cpu_gflops:     125.4,
+    total_gflops:   4250.5
+  },
+  resourceTarget: 90,                   // Target system resource utilization (~90%)
+  backends:       ["webgpu-high-performance", "webgpu-low-power", "cpu"],
+  concurrency:    16                    // Parallel pipeline count
 }
 ```
-
-Setting `litert: true` opts the node into receiving LiteRT inference tasks. Nodes without this flag only receive Mandelbulb and custom JS tasks.
-
----
 
 ## Redundancy & Consensus
 
@@ -266,24 +279,42 @@ This protects against faulty or malicious nodes returning incorrect results.
 
 ---
 
+## Security & Deployment Notice
+
+> [!WARNING]
+> **Distributed Script Execution Threat Model**
+> `GridCompute` distributes computation tasks across connected browser nodes. By design, generic compute tasks (`type: 'custom'`) execute JavaScript payloads inside browser Web Workers (`worker.js`).
+> 
+> - **Local / Intranet Use**: The default configuration (`cors: '*'`, unauthenticated `/api/v1/jobs`) is designed for development, research clusters, LAN compute pools, and controlled laboratory environments.
+> - **Public Network Exposure**: If exposing the coordinator server to the public internet, **you must place it behind a reverse proxy (e.g. Nginx, Caddy, Cloudflare) with an authentication layer** (API keys, OAuth, or HTTP Basic Auth) to prevent untrusted actors from dispatching arbitrary scripts to connected worker browsers.
+> - **Sandbox Scope**: Tasks run inside isolated Web Workers without direct DOM access; however, workers have network access (`fetch`, `importScripts`). Ensure task scripts originate from trusted submitters.
+
+---
+
 ## File Overview
 
 ```
 GridCompute/
-├── server.js          # Node.js coordinator (Express + Socket.IO)
-├── index.html         # Browser UI (dashboard + canvas)
-├── worker_gpu.js      # WebGL2 GPU Web Worker (Mandelbulb)
-├── worker.js          # CPU JavaScript Web Worker (Mandelbulb)
-├── worker_litert.js   # LiteRT.js inference Web Worker (ML tasks)
-├── GridClient.js      # Client-side Socket.IO helper
-├── NoSleep.min.js     # Prevent mobile display sleep during compute
-├── models/            # Uploaded .tflite model files (auto-created)
-├── package.json
-└── README.md
+├── server.js               # Node.js coordinator (Express, Socket.IO, task dispatcher)
+├── index.html              # Worker dashboard & live GFLOPS hardware telemetry UI
+├── demo_app.html           # Interactive consumer demo application (/demo)
+├── demo_cli.js             # Node.js CLI tool demonstrating matrix & Monte Carlo runs
+├── GridClient.js           # Client SDK for programmatic job submission & polling
+├── worker_webgpu.js        # WebGPU worker (Dual dGPU + iGPU FP32/FP16/INT8 pipelines)
+├── worker_gpu.js           # WebGL2 GPGPU worker (Universal fallback for 2019+ hardware)
+├── worker.js               # Multi-core CPU Web Worker (Pure JS compute engine)
+├── worker_litert.js        # LiteRT.js inference worker (Distributed .tflite ML models)
+├── NoSleep.min.js          # Keeps mobile/desktop screens and tabs awake (MIT License)
+├── examples/               # Standalone real-world client scripts (e.g. Distributed OCR)
+├── models/                 # Uploaded .tflite model repository
+├── package.json            # NPM dependencies and project metadata
+├── LICENSE                 # GNU Affero General Public License v3 (AGPL-3.0)
+└── README.md               # Architecture documentation and API reference
 ```
 
 ---
 
 ## License
 
-See [LICENSE](LICENSE).
+This project is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0) — see the [LICENSE](LICENSE) file for details.
+Third-party bundled libraries (`NoSleep.min.js`) are subject to their respective licenses (MIT).
