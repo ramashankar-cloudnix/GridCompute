@@ -1,26 +1,25 @@
-# GridCompute
+# ⚡ GridCompute: Decentralized In-Browser Computing Mesh
 
-A distributed, browser-based compute grid. Any device that opens the URL becomes a worker node — contributing its CPU and GPU to a shared task queue coordinated by a central Node.js server over WebSockets (Socket.IO).
+> **High-performance distributed computing mesh turning browser tabs into compute nodes. Features WebGPU/WebGL acceleration with CPU failover, LiteRT ML inference, dynamic runtime script imports, task redundancy consensus, and real-time WebSocket orchestration.**
 
-Originally built for 3D Mandelbulb fractal rendering, the grid now supports **generic ML inference workloads** via [LiteRT.js](https://github.com/google-ai-edge/LiteRT) — Google's high-performance `.tflite` runtime for the browser.
+**GridCompute** is a zero-install, peer-to-peer distributed computing platform that turns any device with a web browser into a high-throughput processing node. Simply by navigating to a URL, connected smartphones, laptops, and desktop browsers benchmark their capabilities and start pulling compute tasks over low-latency WebSockets.
 
 ---
 
-## Features
+## 🌟 Key Capabilities
 
 | Capability | Detail |
 |---|---|
-| **~90% System Resource Saturation** | Dynamically scales worker pool to ~90% of host capacity with configurable target slider (20%–100%) |
-| **Collective dGPU + iGPU Computing** | WebGPU dual-adapter initialization harnesses discrete and integrated GPUs simultaneously |
-| **Legacy 5–7yr Hardware Fallback** | Universal WebGL2 GPGPU + multi-core CPU workers run reliably on 2019+ devices |
-| **2026 GFLOPS Benchmark Engine** | Tests FP32, FP16 (`shader-f16`), and INT8 quantized GOPS for edge AI workloads |
+| **🚀 Zero-Install Node Onboarding** | Any browser joins the compute grid instantly with zero setup, native extensions, or installations |
+| **⚡ Heterogeneous Hardware Acceleration** | Automatically leverages **WebGPU** (dual dGPU + iGPU) & **WebGL2** with seamless runtime fallback to multi-threaded **CPU Web Workers** |
+| **🧠 Distributed Machine Learning** | Native client-side **LiteRT** / TensorFlow Lite (`.tflite`) inference models running on WASM runtimes |
+| **📄 Dynamic Dependencies & PDF OCR** | Tasks dynamically import external libraries (e.g., **Tesseract.js** for distributed OCR, **ONNX**, **FFmpeg.wasm**) at runtime |
+| **🛡️ Fault Tolerance & Redundancy Consensus** | Task redundancy ($N=1..5$) with node-avoidance distribution and majority consensus validation |
+| **~90% System Resource Saturation** | Dynamically scales worker pool to ~90% host capacity with configurable target slider (20%–100%) |
+| **2026 GFLOPS Benchmark Engine** | Real-time benchmarking of FP32, FP16 (`shader-f16`), and INT8 quantized GOPS for edge AI workloads |
 | **Background Tab Persistence** | Screen Wake Lock + silent Web Audio loop + Web Locks lease keep workers active even when minimized |
-| **Unified Task Push REST API** | Push distributed GEMM, Monte Carlo, ML inference, and custom kernels via `/api/v1/jobs` |
+| **Unified Task Push REST API & SDK** | Programmatically push custom kernels, ML inference, and distributed jobs via `GridClient` SDK |
 | **Standalone Demo Client App** | Interactive demo web app (`/demo`) and CLI client (`demo_cli.js`) to submit and monitor tasks |
-| **3D Mandelbulb rendering** | Distributed raymarching across all connected nodes |
-| **LiteRT.js ML inference** | Run `.tflite` models (WebGPU → XNNPACK CPU fallback) across the grid |
-| **Redundancy & consensus** | Tasks can be replicated across N nodes; majority-vote resolves conflicts |
-| **Fault tolerance** | Disconnected nodes have in-flight tasks automatically re-queued |
 
 ---
 
